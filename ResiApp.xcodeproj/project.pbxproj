@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		7CC997EF2FA9B16500A2DF4B /* ResiApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ResiApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7CC997EF2FA9B16500A2DF4B /* Oro Ganadero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Oro Ganadero.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -40,7 +40,7 @@
 		7CC997F02FA9B16500A2DF4B /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				7CC997EF2FA9B16500A2DF4B /* ResiApp.app */,
+				7CC997EF2FA9B16500A2DF4B /* Oro Ganadero.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,9 +48,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		7CC997EE2FA9B16500A2DF4B /* ResiApp */ = {
+		7CC997EE2FA9B16500A2DF4B /* Oro Ganadero */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 7CC997FA2FA9B16600A2DF4B /* Build configuration list for PBXNativeTarget "ResiApp" */;
+			buildConfigurationList = 7CC997FA2FA9B16600A2DF4B /* Build configuration list for PBXNativeTarget "Oro Ganadero" */;
 			buildPhases = (
 				7CC997EB2FA9B16500A2DF4B /* Sources */,
 				7CC997EC2FA9B16500A2DF4B /* Frameworks */,
@@ -63,11 +63,11 @@
 			fileSystemSynchronizedGroups = (
 				7CC997F12FA9B16500A2DF4B /* ResiApp */,
 			);
-			name = ResiApp;
+			name = "Oro Ganadero";
 			packageProductDependencies = (
 			);
 			productName = ResiApp;
-			productReference = 7CC997EF2FA9B16500A2DF4B /* ResiApp.app */;
+			productReference = 7CC997EF2FA9B16500A2DF4B /* Oro Ganadero.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -99,7 +99,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				7CC997EE2FA9B16500A2DF4B /* ResiApp */,
+				7CC997EE2FA9B16500A2DF4B /* Oro Ganadero */,
 			);
 		};
 /* End PBXProject section */
@@ -249,9 +249,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8VQQ7RA9NZ;
+				DEVELOPMENT_TEAM = 22FTUTSK95;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "ResiApp usa la cámara para fotografiar pilas de estiércol y analizarlas con IA";
@@ -268,8 +269,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = artemio.Resiapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jesusflores;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -285,9 +287,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 8VQQ7RA9NZ;
+				DEVELOPMENT_TEAM = 22FTUTSK95;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "ResiApp usa la cámara para fotografiar pilas de estiércol y analizarlas con IA";
@@ -304,8 +307,9 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = artemio.Resiapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jesusflores;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -328,7 +332,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		7CC997FA2FA9B16600A2DF4B /* Build configuration list for PBXNativeTarget "ResiApp" */ = {
+		7CC997FA2FA9B16600A2DF4B /* Build configuration list for PBXNativeTarget "Oro Ganadero" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7CC997FB2FA9B16600A2DF4B /* Debug */,
