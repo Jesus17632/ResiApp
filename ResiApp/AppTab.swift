@@ -1,18 +1,12 @@
 //
-//  AppTab.swift
+//  Enum.swift
 //  ResiApp
 //
-//  Created by Dev Jr. on 05/05/26.
+//  Created by Dev Jr.23 on 5/5/26.
 //
 
-import SwiftUI
+import Foundation
 
-struct AppTab: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
-    }
-}
-
-#Preview {
-    AppTab()
+enum AppTab: Hashable {
+    case home, scan, profile
 }

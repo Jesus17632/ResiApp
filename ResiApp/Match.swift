@@ -1,18 +1,48 @@
 //
 //  Match.swift
-//  ResiApp
+//  EcoVinculo
 //
-//  Created by Dev Jr. on 05/05/26.
+//  Conexión productor-comprador propuesta por MatchingEngine (Bloque 3).
+//  Usamos UUIDs sueltos en lugar de @Relationship para mantener la lógica
+//  de sincronización con backend simple (Firebase en Bloque 2/3).
 //
 
-import SwiftUI
+import Foundation
+import SwiftData
 
-struct Match: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
-    }
+enum MatchEstado: String, Codable {
+    case propuesto    // Sugerido por el motor, pendiente de confirmación humana
+    case confirmado   // El usuario aceptó el match
+    case rechazado    // El usuario lo descartó
 }
 
-#Preview {
-    Match()
+@Model
+final class Match {
+    @Attribute(.unique) var id: UUID
+    var pileId: UUID
+    var plantId: UUID
+    var fecha: Date
+    var estadoRaw: String
+    var distanciaKm: Double
+
+    var estado: MatchEstado {
+        get { MatchEstado(rawValue: estadoRaw) ?? .propuesto }
+        set { estadoRaw = newValue.rawValue }
+    }
+
+    init(
+        id: UUID = UUID(),
+        pileId: UUID,
+        plantId: UUID,
+        fecha: Date = .now,
+        estado: MatchEstado = .propuesto,
+        distanciaKm: Double = 0
+    ) {
+        self.id = id
+        self.pileId = pileId
+        self.plantId = plantId
+        self.fecha = fecha
+        self.estadoRaw = estado.rawValue
+        self.distanciaKm = distanciaKm
+    }
 }

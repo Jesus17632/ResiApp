@@ -7,7 +7,7 @@
 
 import CoreLocation
 import Observation
-import MapKit
+internal import MapKit
 
 @Observable
 class LocationManager: NSObject, CLLocationManagerDelegate {

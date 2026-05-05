@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import MapKit
+internal import MapKit
 
 struct MapView: View {
     @State private var locationManager = LocationManager()

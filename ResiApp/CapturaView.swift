@@ -14,6 +14,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+internal import MapKit
 
 struct CapturaView: View {
     @Environment(\.modelContext) private var modelContext
