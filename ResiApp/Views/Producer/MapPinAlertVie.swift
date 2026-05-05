@@ -814,7 +814,7 @@ struct PlantaPopupCentrado: View {
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.08)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -832,55 +832,41 @@ struct PlantaPopupCentrado: View {
 // MARK: - HARDCODED DATA
 
 struct HardcodedData {
-    static let capturasMock: [SimulatedCapture] = [
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 45.0, volumenM3: 150.0, alimento: "Silo de maíz",      latitud: 28.4053, longitud: -106.8671),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 50.0, volumenM3: 120.0, alimento: "Pasto estrella",    latitud: 16.9056, longitud: -92.0931),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 48.0, volumenM3: 110.0, alimento: "Alfalfa",           latitud: 18.9030, longitud: -98.4380),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 40.0, volumenM3: 95.0,  alimento: "Rastrojo de maíz",  latitud: 30.5606, longitud: -115.9422),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 46.0, volumenM3: 180.0, alimento: "Sorgo forrajero",   latitud: 25.5744, longitud: -108.3667),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 52.0, volumenM3: 300.0, alimento: "Silo de maíz",      latitud: 25.5611, longitud: -103.4961),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 50.0, volumenM3: 280.0, alimento: "Silo de maíz",      latitud: 25.5833, longitud: -103.4958),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 47.0, volumenM3: 85.0,  alimento: "Pasto estrella",    latitud: 22.2150, longitud: -98.3842),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 44.0, volumenM3: 105.0, alimento: "Alfalfa",           latitud: 21.3508, longitud: -98.2250),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 55.0, volumenM3: 75.0,  alimento: "Pasto estrella",    latitud: 21.1425, longitud: -88.1522),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 53.0, volumenM3: 60.0,  alimento: "Sorgo forrajero",   latitud: 18.1833, longitud: -90.6833),
-        SimulatedCapture(producerProfileId: UUID(), humedadPct: 49.0, volumenM3: 110.0, alimento: "Rastrojo de maíz",  latitud: 19.7717, longitud: -104.3642)
-    ]
 
     // MARK: 20 capturas — zonas ganaderas bovinas documentadas de México
 
     static let capturasMock: [SimulatedCapture] = [
         // Chihuahua — mayor hato bovino del país
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 1),  animal: "Bovino 🐄", humedadPct: 52, volumenM3: 180, alimento: "Silo de maíz",        latitud: 28.4053, longitud: -106.8671),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 2),  animal: "Bovino 🐄", humedadPct: 48, volumenM3: 210, alimento: "Pasto nativo",         latitud: 29.1500, longitud: -107.9833),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 1), humedadPct: 52, volumenM3: 180, alimento: "Silo de maíz",        latitud: 28.4053, longitud: -106.8671),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 2), humedadPct: 48, volumenM3: 210, alimento: "Pasto nativo",         latitud: 29.1500, longitud: -107.9833),
         // Jalisco — segundo hato bovino nacional
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 3),  animal: "Bovino 🐄", humedadPct: 55, volumenM3: 145, alimento: "Alfalfa",              latitud: 20.3867, longitud: -103.8972),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 4),  animal: "Bovino 🐄", humedadPct: 50, volumenM3: 160, alimento: "Sorgo forrajero",      latitud: 20.1167, longitud: -104.3500),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 3), humedadPct: 55, volumenM3: 145, alimento: "Alfalfa",              latitud: 20.3867, longitud: -103.8972),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 4), humedadPct: 50, volumenM3: 160, alimento: "Sorgo forrajero",      latitud: 20.1167, longitud: -104.3500),
         // Veracruz — zona tropical ganadera
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 5),  animal: "Bovino 🐄", humedadPct: 68, volumenM3: 130, alimento: "Estrella de África",   latitud: 18.5700, longitud: -95.7500),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 6),  animal: "Bovino 🐄", humedadPct: 65, volumenM3: 115, alimento: "Pasto guinea",          latitud: 19.1833, longitud: -96.1333),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 5), humedadPct: 68, volumenM3: 130, alimento: "Estrella de África",   latitud: 18.5700, longitud: -95.7500),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 6), humedadPct: 65, volumenM3: 115, alimento: "Pasto guinea",          latitud: 19.1833, longitud: -96.1333),
         // Sonora — ganadería extensiva
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 7),  animal: "Bovino 🐄", humedadPct: 40, volumenM3: 250, alimento: "Cebada y sorgo",       latitud: 29.0922, longitud: -110.9542),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 8),  animal: "Bovino 🐄", humedadPct: 42, volumenM3: 195, alimento: "Pasto buffel",          latitud: 30.0667, longitud: -110.9333),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 7), humedadPct: 40, volumenM3: 250, alimento: "Cebada y sorgo",       latitud: 29.0922, longitud: -110.9542),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 8), humedadPct: 42, volumenM3: 195, alimento: "Pasto buffel",          latitud: 30.0667, longitud: -110.9333),
         // Sinaloa — ganadería de engorda
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 9),  animal: "Bovino 🐄", humedadPct: 46, volumenM3: 175, alimento: "Concentrado comercial", latitud: 25.5744, longitud: -108.3667),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 10), animal: "Bovino 🐄", humedadPct: 49, volumenM3: 220, alimento: "Maíz y soya",           latitud: 25.9500, longitud: -108.4833),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 9), humedadPct: 46, volumenM3: 175, alimento: "Concentrado comercial", latitud: 25.5744, longitud: -108.3667),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 10), humedadPct: 49, volumenM3: 220, alimento: "Maíz y soya",           latitud: 25.9500, longitud: -108.4833),
         // Durango — ganadería serrana
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 11), animal: "Bovino 🐄", humedadPct: 44, volumenM3: 165, alimento: "Rastrojo de maíz",     latitud: 24.0278, longitud: -105.3728),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 12), animal: "Bovino 🐄", humedadPct: 47, volumenM3: 140, alimento: "Avena forrajera",       latitud: 25.5611, longitud: -103.4961),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 11), humedadPct: 44, volumenM3: 165, alimento: "Rastrojo de maíz",     latitud: 24.0278, longitud: -105.3728),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 12), humedadPct: 47, volumenM3: 140, alimento: "Avena forrajera",       latitud: 25.5611, longitud: -103.4961),
         // Tabasco — ganadería tropical intensiva
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 13), animal: "Bovino 🐄", humedadPct: 72, volumenM3: 100, alimento: "Caña de azúcar",       latitud: 18.0036, longitud: -92.9217),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 14), animal: "Bovino 🐄", humedadPct: 70, volumenM3: 110, alimento: "Pasto Insurgente",      latitud: 18.1833, longitud: -92.4833),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 13), humedadPct: 72, volumenM3: 100, alimento: "Caña de azúcar",       latitud: 18.0036, longitud: -92.9217),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 14), humedadPct: 70, volumenM3: 110, alimento: "Pasto Insurgente",      latitud: 18.1833, longitud: -92.4833),
         // Tamaulipas — ganadería extensiva noreste
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 15), animal: "Bovino 🐄", humedadPct: 43, volumenM3: 190, alimento: "Zacate buffel",         latitud: 23.7369, longitud: -99.1411),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 16), animal: "Bovino 🐄", humedadPct: 45, volumenM3: 205, alimento: "Sorgo y melaza",        latitud: 25.4306, longitud: -98.8500),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 15), humedadPct: 43, volumenM3: 190, alimento: "Zacate buffel",         latitud: 23.7369, longitud: -99.1411),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 16), humedadPct: 45, volumenM3: 205, alimento: "Sorgo y melaza",        latitud: 25.4306, longitud: -98.8500),
         // Michoacán — ganadería de leche y carne
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 17), animal: "Bovino 🐄", humedadPct: 56, volumenM3: 135, alimento: "Alfalfa y ensilado",   latitud: 19.7000, longitud: -101.1833),
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 18), animal: "Bovino 🐄", humedadPct: 53, volumenM3: 125, alimento: "Pasto ryegrass",        latitud: 19.5500, longitud: -102.0667),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 17), humedadPct: 56, volumenM3: 135, alimento: "Alfalfa y ensilado",   latitud: 19.7000, longitud: -101.1833),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 18), humedadPct: 53, volumenM3: 125, alimento: "Pasto ryegrass",        latitud: 19.5500, longitud: -102.0667),
         // Guerrero — ganadería de trópico seco
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 19), animal: "Bovino 🐄", humedadPct: 58, volumenM3: 95,  alimento: "Pasto jaragua",         latitud: 17.5500, longitud: -100.0333),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 19), humedadPct: 58, volumenM3: 95,  alimento: "Pasto jaragua",         latitud: 17.5500, longitud: -100.0333),
         // Oaxaca — ganadería de la Cañada
-        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 20), animal: "Bovino 🐄", humedadPct: 60, volumenM3: 88,  alimento: "Maíz criollo",          latitud: 17.8500, longitud: -96.7667),
+        SimulatedCapture(id: UUID(), producerProfileId: UUID(), fecha: Date().addingTimeInterval(-86400 * 20), humedadPct: 60, volumenM3: 88,  alimento: "Maíz criollo",          latitud: 17.8500, longitud: -96.7667),
     ]
 
     // MARK: 5 Buyers (perfiles de usuario comprador — estilo original)
