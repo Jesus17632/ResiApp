@@ -26,6 +26,11 @@ struct PerfilCompradorView: View {
     @State private var presionandoCambiarRol = false
     @State private var presionandoAvatar = false
 
+    // Estados para el mock-up de búsqueda de match (MVP — animación determinista)
+    @State private var buscandoMatch = false
+    @State private var matchEncontrado = false
+    @State private var pulsoActivo = false
+
     private var perfil: BuyerProfile? { perfiles.first }
 
     var body: some View {
@@ -41,6 +46,13 @@ struct PerfilCompradorView: View {
                             headerCompacto(perfil)
                             statsRow
                             miniMapa(perfil)
+
+                            // Botón de búsqueda de match — solo si no hay matches activos
+                            // (todos rechazados también cuenta como "puedes buscar otro").
+                            if matches.isEmpty || matches.allSatisfy({ $0.estado == .rechazado }) {
+                                botonBuscarMatch
+                            }
+
                             matchesList
                             botonCambiarRol
                                 .padding(.top, 20)
@@ -270,23 +282,28 @@ struct PerfilCompradorView: View {
             .padding(.top, 22)
             .padding(.bottom, 8)
 
-            if matches.isEmpty {
-                emptyState
-            } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(matches.enumerated()), id: \.element.id) { idx, match in
-                        matchRow(match)
-                        if idx < matches.count - 1 {
-                            Divider().padding(.leading, 60)
+            // Animación: cuando matches.count cambia (típicamente 0 → 1 al insertar
+            // el Match mock), la transición entre emptyState y la lista es suave.
+            Group {
+                if matches.isEmpty {
+                    emptyState
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(matches.enumerated()), id: \.element.id) { idx, match in
+                            matchRow(match)
+                            if idx < matches.count - 1 {
+                                Divider().padding(.leading, 60)
+                            }
                         }
                     }
+                    .background(
+                        Color(.secondarySystemGroupedBackground),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
+                    .padding(.horizontal, 16)
                 }
-                .background(
-                    Color(.secondarySystemGroupedBackground),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                )
-                .padding(.horizontal, 16)
             }
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: matches.count)
         }
     }
 
@@ -361,6 +378,158 @@ struct PerfilCompradorView: View {
         case .propuesto:  return .orange
         case .confirmado: return .appGreen
         case .rechazado:  return .appRed
+        }
+    }
+
+    // MARK: - Buscar match (mock-up animado para MVP)
+    //
+    // Esta sección es UI/UX puro — no hay lógica real de matching todavía.
+    // El botón dispara una secuencia determinista de 4s que termina insertando
+    // un Match mock en SwiftData para demostrar el flow.
+
+    @ViewBuilder
+    private var botonBuscarMatch: some View {
+        Group {
+            if matchEncontrado {
+                // Estado 3: tarjeta de "match encontrado"
+                tarjetaMatchEncontrado
+                    .transition(.scale.combined(with: .opacity))
+            } else if buscandoMatch {
+                // Estado 2: pulsos animados
+                vistaBuscando
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                // Estado 1: botón en reposo
+                Button {
+                    iniciarBusquedaMock()
+                } label: {
+                    Label("Buscar match disponible", systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.appGreen)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 18)
+    }
+
+    /// Estado 2: tres círculos concéntricos pulsando + texto
+    private var vistaBuscando: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                // Tres anillos con opacidad decreciente. El scaleEffect oscila
+                // gracias al toggle de pulsoActivo + .repeatForever.
+                Circle()
+                    .fill(Color.appGreen.opacity(0.08))
+                    .frame(width: 100, height: 100)
+                    .scaleEffect(pulsoActivo ? 1.0 : 0.7)
+                Circle()
+                    .fill(Color.appGreen.opacity(0.15))
+                    .frame(width: 76, height: 76)
+                    .scaleEffect(pulsoActivo ? 1.0 : 0.7)
+                Circle()
+                    .fill(Color.appGreen.opacity(0.25))
+                    .frame(width: 52, height: 52)
+                    .scaleEffect(pulsoActivo ? 1.0 : 0.7)
+
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(Color.appGreen)
+            }
+            .frame(height: 110)
+            .animation(
+                .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                value: pulsoActivo
+            )
+
+            Text("Buscando productores cercanos…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+    }
+
+    /// Estado 3: tarjeta verde de "¡Match encontrado!"
+    private var tarjetaMatchEncontrado: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(Color.appGreen)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("¡Match encontrado!")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text("Planta Biogás Puebla")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Image(systemName: "location.fill")
+                        .font(.caption2)
+                    Text("12.4 km")
+                        .font(.caption.monospacedDigit())
+                }
+                .foregroundStyle(Color.appGreen)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.appGreen.opacity(0.12),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.appGreen.opacity(0.4), lineWidth: 1)
+        )
+    }
+
+    private func iniciarBusquedaMock() {
+        guard perfil != nil else { return }
+        let impact = UIImpactFeedbackGenerator(style: .medium)
+        impact.impactOccurred()
+
+        withAnimation(.easeInOut(duration: 0.3)) { buscandoMatch = true }
+        // Disparar el toggle dentro de withAnimation para que .repeatForever
+        // tome efecto en el scaleEffect de los anillos.
+        withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+            pulsoActivo = true
+        }
+
+        // Después de 2.8s simulamos que encontró un match
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                matchEncontrado = true
+            }
+
+            // 1.2s más → insertar Match real en SwiftData y resetear estados
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                let nuevoMatch = Match(
+                    pileId: UUID(),       // mock — en prod vendría del ManurePile real
+                    plantId: UUID(),      // mock — en prod vendría de ProcessingPlant
+                    estado: .propuesto,
+                    distanciaKm: 12.4
+                )
+                modelContext.insert(nuevoMatch)
+                try? modelContext.save()
+
+                withAnimation(.easeOut(duration: 0.4)) {
+                    buscandoMatch = false
+                    matchEncontrado = false
+                    pulsoActivo = false
+                }
+            }
         }
     }
 
