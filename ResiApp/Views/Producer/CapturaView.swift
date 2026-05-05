@@ -2,13 +2,15 @@
 //  CapturaView.swift
 //  ResiApp
 //
-//  Pestaña del productor — versión "smart capture" estilo Google Lens:
+//  Pestaña del productor — captura inteligente estilo Tlane:
 //
-//  - Visor en vivo (AVCaptureSession) que detecta la pila automáticamente.
-//  - Overlay 3D animado encima del objeto detectado.
+//  - Visor en vivo (AVCaptureSession) con detección automática.
+//  - Recuadro estático centrado (corner brackets verdes).
 //  - Lock-on automático cuando la detección es estable → análisis de IA.
-//  - Rama paralela "Elegir de galería" que salta directo al análisis.
+//  - Rama paralela "Galería" que salta directo al análisis.
 //  - Pantalla final con diagnóstico y botón de publicar al marketplace.
+//
+//  Esta vista es PURA presentación. Toda la lógica vive en CapturaViewModel.
 //
 
 import SwiftUI
@@ -36,6 +38,9 @@ struct CapturaView: View {
         }
         .toolbar(.hidden, for: .navigationBar)
         .task {
+            // .task solo corre la primera vez que el ViewModel no existe.
+            // Aquí solo creamos el ViewModel y pedimos permiso. Reanudar la
+            // cámara al volver a la tab se hace en .onAppear (abajo).
             if viewModel == nil {
                 viewModel = CapturaViewModel(
                     context: modelContext,
@@ -47,6 +52,15 @@ struct CapturaView: View {
             }
             if let vm = viewModel, case .requestingPermission = vm.state {
                 await vm.requestCameraPermission()
+            }
+        }
+        .onAppear {
+            // Cada vez que la vista vuelve a aparecer (cambio de tab, dismiss
+            // de sheet, etc.), si estábamos en .scanning hay que reanudar la
+            // sesión — porque .onDisappear la detuvo. Sin esto, ves el último
+            // frame congelado.
+            if let vm = viewModel, case .scanning = vm.state {
+                vm.startCamera()
             }
         }
         .onDisappear {
@@ -77,8 +91,8 @@ struct CapturaView: View {
         case .scanning(let detection):
             scanningContent(vm: vm, detection: detection)
 
-        case .locking(_, let confidence):
-            lockingContent(vm: vm, confidence: confidence)
+        case .locking(let frozenFrame, let confidence):
+            lockingContent(frozenFrame: frozenFrame, confidence: confidence)
 
         case .analyzing(let frame):
             analyzingContent(frame: frame)
@@ -104,7 +118,6 @@ struct CapturaView: View {
             CameraPreviewView(session: vm.cameraSession)
                 .ignoresSafeArea()
 
-            // Recuadro estático estilo Tlane, centrado.
             SmartBoundingBoxOverlay(isLocked: false)
 
             VStack {
@@ -147,31 +160,41 @@ struct CapturaView: View {
             Spacer()
 
             // Atajo manual: si el detector no está disparando, el usuario
-            // puede forzar un análisis con el frame actual. La detección
-            // automática es lo principal, pero no atrapamos al usuario.
+            // puede forzar un análisis con el frame actual.
             Button {
                 viewModel?.captureManually()
             } label: {
                 Circle()
                     .fill(.white)
                     .frame(width: 72, height: 72)
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 4).padding(-6))
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.white.opacity(0.4), lineWidth: 4)
+                            .padding(-6)
+                    )
             }
 
             Spacer()
 
-            // Placeholder para mantener simétrico el shutter
+            // Placeholder simétrico
             Color.clear.frame(width: 52, height: 52)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 36)
     }
 
-    // MARK: - Estado: locking (recuadro sólido ~450ms)
+    // MARK: - Estado: locking (frame congelado + recuadro sólido ~450ms)
+    //
+    // [fix] Antes mostrábamos `CameraPreviewView(session:)` aquí, pero la
+    // sesión ya está detenida cuando entramos a este estado → la pantalla
+    // se veía como "trabada". Ahora pintamos el último frame que vio el
+    // detector, así la transición a .analyzing es continua.
 
-    private func lockingContent(vm: CapturaViewModel, confidence: Double) -> some View {
+    private func lockingContent(frozenFrame: UIImage, confidence: Double) -> some View {
         ZStack {
-            CameraPreviewView(session: vm.cameraSession)
+            Image(uiImage: frozenFrame)
+                .resizable()
+                .scaledToFill()
                 .ignoresSafeArea()
 
             SmartBoundingBoxOverlay(isLocked: true)
@@ -190,6 +213,9 @@ struct CapturaView: View {
     }
 
     // MARK: - Estado: analyzing (frame congelado + spinner)
+    //
+    // Foundation Models on-device puede tardar 3–10s. Mostramos un timer
+    // para que el usuario sepa que algo está pasando y no piense que se trabó.
 
     private func analyzingContent(frame: UIImage) -> some View {
         ZStack {
@@ -198,22 +224,9 @@ struct CapturaView: View {
                 .scaledToFill()
                 .ignoresSafeArea()
 
-            // Capa oscura encima
             Color.black.opacity(0.55).ignoresSafeArea()
 
-            VStack(spacing: 18) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(.white)
-                Text("Analizando con IA…")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                Text("Estimando humedad, volumen y calidad")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.8))
-            }
-            .padding(28)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            AnalyzingPanel()
         }
     }
 
@@ -358,7 +371,7 @@ private struct ResultadoScreen: View {
     }
 }
 
-// MARK: - Card de resultado (mismo diseño que la versión anterior)
+// MARK: - Card de resultado
 
 private struct ResultadoCard: View {
     let resultado: ManureClassification
@@ -448,5 +461,53 @@ private struct ResultadoCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - Panel de "Analizando" con timer
+//
+// Foundation Models tarda lo que tarda — 3 a 10 segundos típicos.
+// Mostrar el tiempo transcurrido le quita ansiedad al usuario:
+// "ah, sí está corriendo, no se trabó".
+
+private struct AnalyzingPanel: View {
+    @State private var startedAt = Date()
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let elapsed = context.date.timeIntervalSince(startedAt)
+            VStack(spacing: 18) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                Text("Analizando con IA…")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text(stageMessage(elapsed: elapsed))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                Text(String(format: "%.1fs", elapsed))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .padding(28)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        }
+    }
+
+    /// Mensajes que cambian para dar la impresión de "el modelo está trabajando".
+    /// No reflejan etapas reales internas — solo es feedback útil al usuario.
+    private func stageMessage(elapsed: TimeInterval) -> String {
+        switch elapsed {
+        case ..<2:
+            return "Detectando características visuales"
+        case 2..<6:
+            return "Estimando humedad y volumen"
+        case 6..<12:
+            return "Evaluando calidad del material"
+        default:
+            return "Esto está tardando un poco más de lo normal…"
+        }
     }
 }

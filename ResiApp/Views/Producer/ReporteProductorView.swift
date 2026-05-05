@@ -336,10 +336,14 @@ struct ReporteProductorView: View {
     }
 
     private func calcularStats() -> Stats {
-        // Capturas del perfil
-        let idPerfil = perfil.id
-        let descCap = FetchDescriptor<SimulatedCapture>(
-            predicate: #Predicate { $0.producerProfileId == idPerfil },
+        // Capturas reales del productor: ManurePile en estado available o matched.
+        // ManurePile no tiene producerProfileId aún — la app es single-user por ahora,
+        // así que filtramos todos los lotes activos del contexto. Si en el futuro se
+        // agrega producerProfileId a ManurePile, este predicate se puede restringir.
+        let descCap = FetchDescriptor<ManurePile>(
+            predicate: #Predicate<ManurePile> { pile in
+                pile.syncStatusRaw == "available" || pile.syncStatusRaw == "matched"
+            },
             sortBy: [SortDescriptor(\.fecha, order: .reverse)]
         )
         let todasCapturas = (try? modelContext.fetch(descCap)) ?? []
@@ -363,11 +367,9 @@ struct ReporteProductorView: View {
         // Ingreso estimado: ~$45 MXN por m³ (precio referencia mercado biogás MX)
         let ingreso = vol30 * 45.0
 
-        // Animal top
-        let freq = Dictionary(grouping: cap30, by: \.animal)
-        let topEntry = freq.max(by: { $0.value.count < $1.value.count })
-        let animalTop = topEntry?.key ?? "Sin capturas"
-        let capAnimalTop = topEntry?.value.count ?? 0
+        // Animal: la app es exclusivamente bovina por ahora.
+        let animalTop = "Bovino 🐄"
+        let capAnimalTop = cap30.count
 
         // Humedad promedio
         let humProm = cap30.isEmpty ? 0 : cap30.map(\.humedadPct).reduce(0, +) / Double(cap30.count)
@@ -402,11 +404,13 @@ struct ReporteProductorView: View {
         generando = true
         let stats = calcularStats()
 
-        // Capturas últimos 30 días para la tabla del PDF
-        let idPerfil = perfil.id
+        // Capturas reales (ManurePile) últimos 30 días para la tabla del PDF.
+        // Mismo predicate que en calcularStats — único fetch consolidado.
         let hace30 = Calendar.current.date(byAdding: .day, value: -30, to: .now)!
-        let descCap = FetchDescriptor<SimulatedCapture>(
-            predicate: #Predicate { $0.producerProfileId == idPerfil },
+        let descCap = FetchDescriptor<ManurePile>(
+            predicate: #Predicate<ManurePile> { pile in
+                pile.syncStatusRaw == "available" || pile.syncStatusRaw == "matched"
+            },
             sortBy: [SortDescriptor(\.fecha, order: .reverse)]
         )
         let cap30 = ((try? modelContext.fetch(descCap)) ?? []).filter { $0.fecha >= hace30 }
@@ -494,7 +498,7 @@ struct ShareSheet: UIViewControllerRepresentable {
 struct PDFReporteView: View {
     let perfil: ProducerProfile
     let stats: ReporteProductorView.Stats
-    let capturas: [SimulatedCapture]
+    let capturas: [ManurePile]
 
     private let precioM3: Double = 45.0
 
@@ -596,7 +600,7 @@ struct PDFReporteView: View {
                             HStack {
                                 Text(c.fecha, format: .dateTime.day().month().year())
                                     .frame(width: 70, alignment: .leading)
-                                Text(c.animal)
+                                Text(c.animalFuente)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Text(String(format: "%.0f", c.volumenM3))
                                     .frame(width: 55, alignment: .trailing)

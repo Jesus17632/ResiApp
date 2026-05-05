@@ -2,23 +2,29 @@
 //  VisionFeatureExtractor.swift
 //  ResiApp
 //
-//  Extrae una descripción textual breve de una imagen usando Vision
-//  framework (clasificación on-device) + análisis de color promedio.
-//  La salida la consume Foundation Models para razonar sobre la pila
-//  sin necesidad de un modelo multimodal.
+//  Cambios en este pass:
+//  - CIContext como `static let` (mismo fix que en CapturaViewModel).
+//    Antes se creaba en cada análisis → costo de instanciación de Metal/GPU
+//    a cada rato. Ahora vive una sola vez en el proceso.
 //
 
 import Foundation
 import Vision
 import UIKit
 import CoreImage
+import os.log
+
+private let log = Logger(subsystem: "ResiApp", category: "Vision")
 
 struct VisionFeatureExtractor {
 
+    /// CIContext compartido — costoso de instanciar (configura GPU/Metal),
+    /// barato de reusar. Igual que en CapturaViewModel.
+    nonisolated(unsafe) private static let ciContext = CIContext(
+        options: [.useSoftwareRenderer: false]
+    )
+
     /// Procesa la imagen y devuelve un texto descriptivo corto.
-    /// Marcado `nonisolated` porque el proyecto tiene
-    /// SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor y no queremos
-    /// hacer trabajo pesado de imagen en el main thread.
     nonisolated static func extractFeatures(from imageData: Data) async throws -> String {
         guard let uiImage = UIImage(data: imageData),
               let cgImage = uiImage.cgImage else {
@@ -26,6 +32,7 @@ struct VisionFeatureExtractor {
         }
 
         // 1. Clasificación general (etiquetas tipo "hay", "soil", "organic-matter", etc.)
+        let classifyStart = Date()
         let request = VNClassifyImageRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
@@ -34,6 +41,7 @@ struct VisionFeatureExtractor {
         } catch {
             throw ClassifierError.visionFailed
         }
+        log.debug("vision classify took \(Date().timeIntervalSince(classifyStart))s")
 
         let observations = request.results ?? []
         let topLabels = observations
@@ -43,7 +51,9 @@ struct VisionFeatureExtractor {
             .joined(separator: ", ")
 
         // 2. Color promedio dominante (importante: estiércol mojado es más oscuro)
+        let colorStart = Date()
         let colorDescription = dominantColorDescription(of: uiImage)
+        log.debug("color avg took \(Date().timeIntervalSince(colorStart))s")
 
         // 3. Tamaño y orientación
         let size = uiImage.size
@@ -63,7 +73,6 @@ struct VisionFeatureExtractor {
     private static func dominantColorDescription(of image: UIImage) -> String {
         guard let cgImage = image.cgImage else { return "indeterminado" }
 
-        let context = CIContext(options: nil)
         let inputImage = CIImage(cgImage: cgImage)
         let extent = inputImage.extent
 
@@ -74,7 +83,7 @@ struct VisionFeatureExtractor {
         guard let outputImage = filter?.outputImage else { return "indeterminado" }
 
         var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(
+        ciContext.render(
             outputImage,
             toBitmap: &bitmap,
             rowBytes: 4,
@@ -87,8 +96,6 @@ struct VisionFeatureExtractor {
     }
 
     /// Heurística simple para nombrar un color en español por sus componentes RGB.
-    /// El nombre es ruido para humanos pero le da al modelo señal de humedad
-    /// (oscuro = mojado, claro = seco).
     private static func describeColor(r: Int, g: Int, b: Int) -> String {
         let maxC = Swift.max(r, g, b)
         let minC = Swift.min(r, g, b)
@@ -104,7 +111,6 @@ struct VisionFeatureExtractor {
         default:        luminosidad = "muy claro"
         }
 
-        // Si los canales son similares, es escala de grises
         if delta < 25 {
             return "gris \(luminosidad) (RGB \(r),\(g),\(b))"
         }

@@ -2,21 +2,30 @@
 //  AppleIntelligenceClassifier.swift
 //  ResiApp
 //
-//  Implementación del protocolo ManureClassifierService usando:
-//  - Vision (extracción de etiquetas + color de la foto)
-//  - Foundation Models (razonamiento estructurado @Generable)
-//
-//  Especializado en estiércol bovino exclusivamente.
+//  Cambios en este pass:
+//  - Timeout de 20s sobre Foundation Models. Si no responde, throw → la View
+//    pasa a .error con botón "Intentar de nuevo" en vez de quedarse colgada.
+//  - LanguageModelSession se reusa (no se recrea en cada llamada).
+//  - Logs explícitos de cada etapa para que se vea en Xcode dónde se atora.
 //
 
 import Foundation
 import FoundationModels
+import os.log
+
+private let log = Logger(subsystem: "ResiApp", category: "Classifier")
 
 struct AppleIntelligenceClassifier: ManureClassifierService {
+
+    /// Timeout total de la inferencia. Foundation Models a veces se cuelga
+    /// la primera vez que se invoca (cargando el modelo). 20s es generoso
+    /// pero finito — preferimos un error claro a un freeze infinito.
+    private static let inferenceTimeout: Duration = .seconds(20)
 
     nonisolated func classify(imageData: Data) async throws -> ManureClassification {
 
         // 1. Verificar disponibilidad del modelo on-device.
+        log.debug("classify: checking availability")
         let availability = SystemLanguageModel.default.availability
         switch availability {
         case .available:
@@ -40,10 +49,15 @@ struct AppleIntelligenceClassifier: ManureClassifierService {
         }
 
         // 2. Vision: extraer descripción textual de la foto.
+        log.debug("classify: extracting vision features")
+        let visionStart = Date()
         let visionDescription = try await VisionFeatureExtractor.extractFeatures(from: imageData)
+        log.debug("classify: vision took \(Date().timeIntervalSince(visionStart))s")
 
-        // 3. Foundation Models: razonar sobre la descripción y emitir
-        //    el struct ManureClassification con guided generation.
+        // 3. Foundation Models con timeout.
+        log.debug("classify: running Foundation Models")
+        let fmStart = Date()
+
         let session = LanguageModelSession(
             instructions: """
             Eres un experto en gestión de estiércol bovino en México. Tu trabajo es \
@@ -76,12 +90,34 @@ struct AppleIntelligenceClassifier: ManureClassifierService {
         Estima los parámetros de la pila con base en esta información.
         """
 
+        // Carrera entre la inferencia real y un timeout.
+        // Si gana el timeout, lanzamos error explícito.
         do {
-            let response = try await session.respond(
-                to: prompt,
-                generating: ManureClassification.self
-            )
-            return response.content
+            let result = try await withThrowingTaskGroup(of: ManureClassification.self) { group in
+                group.addTask {
+                    let response = try await session.respond(
+                        to: prompt,
+                        generating: ManureClassification.self
+                    )
+                    return response.content
+                }
+                group.addTask {
+                    try await Task.sleep(for: Self.inferenceTimeout)
+                    throw ClassifierError.inferenceFailed(
+                        "El análisis tardó demasiado (>\(Int(Self.inferenceTimeout.components.seconds))s). Intenta de nuevo."
+                    )
+                }
+                // Devolvemos el primer resultado y cancelamos el otro.
+                guard let first = try await group.next() else {
+                    throw ClassifierError.inferenceFailed("Sin resultado del modelo.")
+                }
+                group.cancelAll()
+                return first
+            }
+            log.debug("classify: Foundation Models took \(Date().timeIntervalSince(fmStart))s")
+            return result
+        } catch let error as ClassifierError {
+            throw error
         } catch {
             throw ClassifierError.inferenceFailed(error.localizedDescription)
         }

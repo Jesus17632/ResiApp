@@ -2,20 +2,12 @@
 //  CapturaViewModel.swift
 //  ResiApp
 //
-//  State machine que coordina:
-//  - Permiso de cámara
-//  - Sesión AVCapture en vivo
-//  - Detección por frame (ManureDetector) con debounce
-//  - Disparo automático del clasificador pesado (AppleIntelligenceClassifier)
-//  - Persistencia de la pila en SwiftData
-//
-//  Adaptado del patrón de InventoryViewModel de Tlane, con cambios:
-//  - El "objeto detectado" no es una categoría, es un bounding box que el
-//    overlay sigue en tiempo real.
-//  - Tras lock-on, el flujo va a `analyzing` automáticamente (no hay sheet
-//    de confirmación intermedia como en Tlane).
-//  - Soporta una rama paralela de "imagen cargada desde galería" que salta
-//    directo a `analyzing`.
+//  Fixes aplicados en este pass:
+//  [1] defer en el Task de captureOutput → isAnalyzingFrame se libera SIEMPRE
+//  [2] Watchdog de 3s → reset forzado si el Task murió silenciosamente
+//  [3] Copias locales de isScanningActive/scanningEpoch al inicio de captureOutput
+//  [4] resetToScanning() resetea explícitamente los flags de frame
+//  [5] CIContext como static let → se crea UNA SOLA VEZ (era el bug de crash/lag más grave)
 //
 
 import Foundation
@@ -29,17 +21,12 @@ import CoreLocation
 enum CapturaState {
     case requestingPermission
     case denied
-    /// Cámara en vivo, buscando objetivo. El detector reporta detección
-    /// para decidir CUÁNDO disparar (no se usa para pintar — el recuadro es estático).
     case scanning(lastDetection: DetectionResult)
-    /// Objetivo confirmado y estable. Se está congelando el frame y arrancando IA.
-    /// El `box` se conserva por compatibilidad / debug pero la UI no lo dibuja.
-    case locking(box: CGRect, confidence: Double)
-    /// IA pesada corriendo (Vision + Foundation Models).
+    /// Lock-on. Cargamos el `frozenFrame` para que la View no intente
+    /// dibujar el preview de cámara (ya está detenida en este punto).
+    case locking(frozenFrame: UIImage, confidence: Double)
     case analyzing(frame: UIImage)
-    /// Resultado listo. La pila ya está en SwiftData en `pendingAnalysis` o lo que decida la IA.
     case result(ManureClassification, frame: UIImage)
-    /// Error recuperable (modelo no disponible, etc.). El frame queda visible.
     case error(message: String, frame: UIImage?)
 }
 
@@ -56,13 +43,7 @@ final class CapturaViewModel: NSObject {
     // MARK: - Estado expuesto
 
     var state: CapturaState = .requestingPermission
-
-    /// La pila creada cuando arrancó el análisis. Se actualiza con el resultado.
-    /// La vista la usa para el botón "Publicar en marketplace".
     private(set) var pileEnAnalisis: ManurePile?
-
-    /// Última detección (box + confianza) que la vista usa para pintar el overlay
-    /// 60fps mientras el state es `.scanning`.
     var lastDetection: DetectionResult = .none
 
     // MARK: - Camera plumbing
@@ -70,19 +51,24 @@ final class CapturaViewModel: NSObject {
     let cameraSession = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "resiapp.camera.session")
 
-    // Tlane usaba `nonisolated(unsafe)` para acceder a estos desde el callback
-    // de AVCapture (que es nonisolated). Mantenemos ese patrón.
-    nonisolated(unsafe) private var lastFrameAnalyzedAt: Date = .distantPast
-    nonisolated(unsafe) private var isAnalyzingFrame: Bool = false
-    nonisolated(unsafe) private var isScanningActive: Bool = false
-    nonisolated(unsafe) private var scanningEpoch: Int = 0
-
-    /// Último UIImage construido a partir del visor. Se usa como fallback para
-    /// `captureManually()` (atajo "shutter"), por si el detector automático
-    /// no está disparando.
+    // nonisolated(unsafe): accedidas desde sessionQueue (captureOutput)
+    // y escritas desde MainActor. Bool e Int en ARM64 son atómicamente
+    // seguros para lecturas/escrituras simples.
+    nonisolated(unsafe) private var lastFrameAnalyzedAt: Date   = .distantPast
+    nonisolated(unsafe) private var isAnalyzingFrame: Bool      = false
+    nonisolated(unsafe) private var isScanningActive: Bool      = false
+    nonisolated(unsafe) private var scanningEpoch: Int          = 0
     nonisolated(unsafe) private var latestFrame: UIImage?
 
-    /// Cuándo empezamos a ver detecciones positivas continuas (para debounce de 1.2s).
+    // [2] Watchdog: si llevamos > 3s "analizando" un frame, el Task murió → reset forzado
+    nonisolated(unsafe) private var frameAnalysisStartedAt: Date = .distantPast
+
+    // [5] CIContext ESTÁTICO: se construye una sola vez para toda la vida del proceso.
+    //     Antes se creaba en cada frame → causa directa de lag y crashes por OOM.
+    nonisolated(unsafe) private static let ciContext = CIContext(
+        options: [.useSoftwareRenderer: false]
+    )
+
     private var stableSince: Date?
     private var stableBox: CGRect?
 
@@ -103,8 +89,6 @@ final class CapturaViewModel: NSObject {
 
     func requestCameraPermission() async {
         #if targetEnvironment(simulator)
-        // En simulador no hay cámara → la vista mostrará el botón de galería,
-        // y la rama de live se queda en .scanning (vista negra).
         state = .scanning(lastDetection: .none)
         isScanningActive = true
         scanningEpoch += 1
@@ -151,18 +135,30 @@ final class CapturaViewModel: NSObject {
         isScanningActive = false
         scanningEpoch += 1
         clearDebounce()
+        // [fix re-entry] Limpiamos los flags de frame también aquí.
+        // Antes solo se limpiaban en resetToScanning(), pero al cambiar
+        // de tab → volver, no pasamos por resetToScanning() y los flags
+        // quedaban "calientes" del estado anterior, causando freezes
+        // intermitentes en la próxima sesión de escaneo.
+        isAnalyzingFrame = false
+        frameAnalysisStartedAt = .distantPast
+        latestFrame = nil
         sessionQueue.async { [weak self] in
             guard let session = self?.cameraSession, session.isRunning else { return }
             session.stopRunning()
         }
     }
 
-    /// Vuelve al estado `.scanning` y reanuda la cámara. Se usa después de un
-    /// resultado o de un error, cuando el usuario aprieta "Tomar otra foto".
+    /// [4] resetToScanning: reset explícito de los flags de frame para que nunca
+    ///     queden colgados entre sesiones de escaneo.
     func resetToScanning() {
         pileEnAnalisis = nil
         lastDetection = .none
         clearDebounce()
+        // [4] Garantía: aunque un Task anterior no haya terminado limpiamente,
+        //     el próximo ciclo de escaneo empieza con flags en cero.
+        isAnalyzingFrame = false
+        frameAnalysisStartedAt = .distantPast
         state = .scanning(lastDetection: .none)
         startCamera()
     }
@@ -206,19 +202,14 @@ final class CapturaViewModel: NSObject {
         lastFrameAnalyzedAt = .distantPast
     }
 
-    // MARK: - Rama "elegir de galería"
+    // MARK: - Rama galería / shutter manual
 
-    /// Salto directo a `.analyzing` con una imagen ya seleccionada por el usuario.
-    /// No pasa por el detector ligero — ya hay imagen, ya hay intención.
     func analyzeFromGallery(uiImage: UIImage) {
         stopCamera()
         state = .analyzing(frame: uiImage)
         Task { await runHeavyClassifier(on: uiImage) }
     }
 
-    /// Atajo manual: el usuario aprieta el shutter aunque el detector automático
-    /// no haya disparado. Usamos el último frame que cacheamos del visor.
-    /// Si no tenemos nada (cámara recién iniciada), no hacemos nada.
     func captureManually() {
         guard case .scanning = state, let frame = latestFrame else { return }
         stopCamera()
@@ -228,24 +219,18 @@ final class CapturaViewModel: NSObject {
 
     // MARK: - Lock-on → análisis pesado
 
-    /// Cuando el detector ligero confirma estabilidad por > 1.2s, transicionamos
-    /// a `.locking` (overlay verde sólido, ~400ms de animación) y luego disparamos
-    /// el clasificador pesado.
     private func lockOn(box: CGRect, confidence: Double, frame: UIImage) async {
-        state = .locking(box: box, confidence: confidence)
+        // [importante] usamos el frame congelado para el estado .locking,
+        // así la View no depende del preview en vivo (que ya detenemos abajo).
+        state = .locking(frozenFrame: frame, confidence: confidence)
         stopCamera()
-
-        // Pequeña pausa para que el usuario vea el lock visualmente.
         try? await Task.sleep(for: .milliseconds(450))
-
         guard !Task.isCancelled else { return }
         state = .analyzing(frame: frame)
         await runHeavyClassifier(on: frame)
     }
 
     private func runHeavyClassifier(on uiImage: UIImage) async {
-        // Persistimos el JPEG primero. Si la IA falla, igual queda registrado
-        // como pendingAnalysis (mismo contrato que tenía CapturaView original).
         guard let jpeg = uiImage.jpegData(compressionQuality: 0.85) else {
             state = .error(message: "No se pudo procesar la imagen.", frame: uiImage)
             return
@@ -273,7 +258,7 @@ final class CapturaViewModel: NSObject {
         do {
             let classification = try await classifier.classify(imageData: jpeg)
             pile.humedadPct = classification.humedadPct
-            pile.volumenM3 = classification.volumenEstimadoM3
+            pile.volumenM3  = classification.volumenEstimadoM3
             try? context.save()
             state = .result(classification, frame: uiImage)
         } catch let error as ClassifierError {
@@ -305,9 +290,6 @@ final class CapturaViewModel: NSObject {
 }
 
 // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate
-//
-// Nota: este delegate corre en `sessionQueue` (background). Por eso cualquier
-// acceso a `state` o a `lastDetection` lo hacemos vía `Task { @MainActor }`.
 
 extension CapturaViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
 
@@ -316,36 +298,50 @@ extension CapturaViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard isScanningActive else { return }
+        // [3] Copias locales capturadas ANTES de cualquier guard,
+        //     para evitar data-race entre sessionQueue y MainActor.
+        let isActive   = isScanningActive
+        let epochAtStart = scanningEpoch
 
-        // Throttle: ~2 fps. Vision saliency + classify cuesta ~50–100ms en A17,
-        // analizar cada frame es desperdicio.
+        guard isActive else { return }
+
         let now = Date()
+
+        // [2] Watchdog: si llevamos > 3s esperando que el Task anterior libere
+        //     el flag, asumimos que murió → reset forzado.
+        if isAnalyzingFrame && now.timeIntervalSince(frameAnalysisStartedAt) > 3.0 {
+            isAnalyzingFrame = false
+            frameAnalysisStartedAt = .distantPast
+        }
+
+        // Throttle: ~2 fps
         guard now.timeIntervalSince(lastFrameAnalyzedAt) >= 0.5,
               !isAnalyzingFrame else { return }
+
         lastFrameAnalyzedAt = now
+        // [2] Marcamos cuándo empezamos, para que el watchdog sepa cuánto llevamos.
         isAnalyzingFrame = true
+        frameAnalysisStartedAt = now
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             isAnalyzingFrame = false
             return
         }
 
-        // Preservamos el frame por si terminamos haciendo lock-on con él,
-        // o por si el usuario aprieta el shutter manual.
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let ciContext = CIContext()
-        let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent)
-        let uiImage = cgImage.map { UIImage(cgImage: $0, scale: 1.0, orientation: .right) }
-        latestFrame = uiImage
-
-        let epochAtStart = scanningEpoch
+        // [5] Usamos el CIContext estático — sin alloc por frame.
+        let ciImage  = CIImage(cvPixelBuffer: pixelBuffer)
+        let cgImage  = CapturaViewModel.ciContext.createCGImage(ciImage, from: ciImage.extent)
+        let uiImage  = cgImage.map { UIImage(cgImage: $0, scale: 1.0, orientation: .right) }
+        latestFrame  = uiImage
 
         Task { [weak self] in
             guard let self else { return }
+            // [1] defer garantiza que isAnalyzingFrame se libera SIEMPRE:
+            //     si la detección falla, si el Task se cancela, si hay un return temprano.
+            defer { self.isAnalyzingFrame = false }
+
             let result = await ManureDetector.detect(in: pixelBuffer)
             await self.handleFrame(result: result, frame: uiImage, expectedEpoch: epochAtStart)
-            self.isAnalyzingFrame = false
         }
     }
 
@@ -354,21 +350,15 @@ extension CapturaViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
         frame: UIImage?,
         expectedEpoch: Int
     ) async {
-        // Si el usuario salió de scanning mientras detectábamos → descartar.
-        guard isScanningActive,
-              scanningEpoch == expectedEpoch else { return }
-        guard case .scanning = state else { return }
+        // [3] Ya no revisamos isScanningActive aquí — epochAtStart es suficiente.
+        //     Cada llamada a startCamera/stopCamera incrementa scanningEpoch,
+        //     haciendo que los frames de epochs anteriores sean descartados.
+        guard scanningEpoch == expectedEpoch,
+              case .scanning = state else { return }
 
-        // Actualizar siempre lastDetection para que el overlay siga al objeto.
         lastDetection = result
         state = .scanning(lastDetection: result)
 
-        // Lógica de debounce: para hacer lock-on necesitamos:
-        //   1. Que haya bounding box
-        //   2. Que isLikelyManure sea true
-        //   3. Que la confianza compuesta supere 0.45
-        //   4. Que el box no se mueva drásticamente entre frames (estabilidad)
-        //   5. Que se mantenga así por 1.2s
         let now = Date()
         let qualifies = result.boundingBox != nil
             && result.isLikelyManure
@@ -376,34 +366,25 @@ extension CapturaViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         if qualifies, let box = result.boundingBox {
             if let prevBox = stableBox, boxesAreClose(box, prevBox) {
-                // sigue siendo el mismo objetivo → revisar timing
                 if let since = stableSince,
                    now.timeIntervalSince(since) >= 1.2,
                    let frame {
-                    // ¡LOCK!
                     await lockOn(box: box, confidence: result.confidence, frame: frame)
                     return
                 }
             } else {
-                // Nuevo candidato — reiniciar timer
-                stableBox = box
+                stableBox  = box
                 stableSince = now
             }
         } else {
-            // Perdimos el objetivo → reset.
-            stableBox = nil
+            stableBox  = nil
             stableSince = nil
         }
     }
 
-    /// Considera dos boxes "el mismo objeto" si sus centros están suficientemente
-    /// cerca. Coordenadas Vision (normalizadas 0..1).
     private nonisolated func boxesAreClose(_ a: CGRect, _ b: CGRect) -> Bool {
-        let centerA = CGPoint(x: a.midX, y: a.midY)
-        let centerB = CGPoint(x: b.midX, y: b.midY)
-        let dx = centerA.x - centerB.x
-        let dy = centerA.y - centerB.y
-        let dist = (dx * dx + dy * dy).squareRoot()
-        return dist < 0.15  // 15% de la pantalla en cualquier eje
+        let dx = a.midX - b.midX
+        let dy = a.midY - b.midY
+        return (dx * dx + dy * dy).squareRoot() < 0.15
     }
 }
