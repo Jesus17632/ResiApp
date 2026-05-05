@@ -2,21 +2,12 @@
 //  SimulatedCapture.swift
 //  ResiApp
 //
-//  Created by Dev Jr.23 on 5/5/26.
+//  La app sirve exclusivamente a productores de ganado bovino.
+//  No hay enum de especies; todas las capturas son bovinas por construcción.
 //
-
 
 import Foundation
 import SwiftData
-
-/// Tipo de animal fuente del estiércol
-enum AnimalFuente: String, Codable, CaseIterable {
-    case bovino   = "Bovino 🐄"
-    case porcino  = "Porcino 🐷"
-    case aviar    = "Aviar 🐔"
-    case equino   = "Equino 🐴"
-    case ovino    = "Ovino 🐑"
-}
 
 @Model
 final class SimulatedCapture {
@@ -26,10 +17,10 @@ final class SimulatedCapture {
     var producerProfileId: UUID
 
     var fecha: Date
-    var animal: String          // AnimalFuente.rawValue
+    var animal: String          // siempre "Bovino 🐄"
     var humedadPct: Double      // 0–100
     var volumenM3: Double       // metros cúbicos
-    var alimento: String        // qué come el animal
+    var alimento: String        // forraje específico
 
     /// Coordenadas donde se generó el pin en el mapa
     var latitud: Double
@@ -43,7 +34,6 @@ final class SimulatedCapture {
         id: UUID = UUID(),
         producerProfileId: UUID,
         fecha: Date = .now,
-        animal: String,
         humedadPct: Double,
         volumenM3: Double,
         alimento: String,
@@ -55,7 +45,7 @@ final class SimulatedCapture {
         self.id = id
         self.producerProfileId = producerProfileId
         self.fecha = fecha
-        self.animal = animal
+        self.animal = "Bovino 🐄"   // valor fijo, sin parámetro
         self.humedadPct = humedadPct
         self.volumenM3 = volumenM3
         self.alimento = alimento
@@ -73,15 +63,20 @@ final class SimulatedCapture {
 // MARK: - Factory de datos aleatorios
 
 extension SimulatedCapture {
+    /// Constante única de especie. La app es bovina por diseño.
+    static let animalFuente: String = "Bovino 🐄"
+
+    /// Forrajes representativos para ganado bovino en México.
+    static let alimentosBovinos: [String] = [
+        "Silo de maíz", "Alfalfa", "Pasto estrella", "Sorgo forrajero", "Rastrojo de maíz"
+    ]
+
     static func aleatorio(profileId: UUID, lat: Double, lon: Double) -> SimulatedCapture {
-        let animal = AnimalFuente.allCases.randomElement()!
-        let alimentos: [String] = ["Maíz y sorgo", "Pasto estrella", "Alfalfa", "Rastrojo de trigo", "Concentrado balanceado", "Caña de azúcar"]
-        return SimulatedCapture(
+        SimulatedCapture(
             producerProfileId: profileId,
-            animal: animal.rawValue,
             humedadPct: Double.random(in: 55...85).rounded(),
             volumenM3: Double(Int.random(in: 2...30)),
-            alimento: alimentos.randomElement()!,
+            alimento: alimentosBovinos.randomElement()!,
             latitud: lat,
             longitud: lon
         )

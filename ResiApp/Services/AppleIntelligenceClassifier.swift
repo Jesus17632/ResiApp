@@ -6,7 +6,7 @@
 //  - Vision (extracción de etiquetas + color de la foto)
 //  - Foundation Models (razonamiento estructurado @Generable)
 //
-//  Todo on-device, sin red, sin API keys, sin costos.
+//  Especializado en estiércol bovino exclusivamente.
 //
 
 import Foundation
@@ -46,14 +46,14 @@ struct AppleIntelligenceClassifier: ManureClassifierService {
         //    el struct ManureClassification con guided generation.
         let session = LanguageModelSession(
             instructions: """
-            Eres un experto en gestión de residuos ganaderos en México. Tu trabajo es \
-            estimar las características de pilas de estiércol fotografiadas por productores, \
-            basándote en una descripción visual extraída por visión por computadora.
+            Eres un experto en gestión de estiércol bovino en México. Tu trabajo es \
+            estimar las características de pilas de estiércol fotografiadas por productores \
+            ganaderos, basándote en una descripción visual extraída por visión por computadora.
 
-            Reglas para humedad:
-            - Color oscuro (marrón muy oscuro, casi negro) y brillante = mojado, 70–85%.
-            - Color marrón medio = semicompostado, 40–60%.
-            - Color claro o grisáceo = seco, 15–30%.
+            Reglas para humedad (específicas para estiércol bovino):
+            - Fresco/reciente (menos de 48 h): color marrón muy oscuro, casi negro, brillante por humedad → 75–85%.
+            - Semicompostado (1 a 4 semanas): color marrón medio, mate, sin brillo → 45–65%.
+            - Maduro/seco (más de un mes): color claro, grisáceo o terroso, textura quebradiza → 15–35%.
 
             Reglas para volumen:
             - El sistema solo te dice qué etiquetas detectó Vision, no la escala real.
@@ -69,7 +69,7 @@ struct AppleIntelligenceClassifier: ManureClassifierService {
         )
 
         let prompt = """
-        Análisis de Vision sobre la foto de la pila de estiércol:
+        Análisis de Vision sobre la foto de la pila de estiércol bovino:
 
         \(visionDescription)
 

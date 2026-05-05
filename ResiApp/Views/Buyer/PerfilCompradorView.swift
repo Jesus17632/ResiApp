@@ -13,101 +13,115 @@ internal import MapKit
 struct PerfilCompradorView: View {
     @AppStorage("userRole") private var userRole: String = ""
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss // Flecha emergente
+    @Environment(\.dismiss) private var dismiss
 
     @Query private var perfiles: [BuyerProfile]
     @Query private var matches: [Match]
 
-    @State private var mostrarConfirmacion = false
+    @State private var mostrarConfirmacionRol = false
     @State private var pickerItem: PhotosPickerItem?
     @State private var aparecer = false
+
+    // Estados para animaciones de botones
+    @State private var presionandoCambiarRol = false
+    @State private var presionandoAvatar = false
 
     private var perfil: BuyerProfile? { perfiles.first }
 
     var body: some View {
         ZStack {
-            // Fondo blanco puro
-            Color.white.ignoresSafeArea()
+            Color(.systemGroupedBackground).ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // MARK: - Barra superior emergente (< en negro)
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(.black)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                if let perfil {
+            if let perfil {
+                VStack(spacing: 0) {
+                    barraSuperior
+                    
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 24) {
+                        VStack(spacing: 0) {
                             headerCompacto(perfil)
                             statsRow
                             miniMapa(perfil)
                             matchesList
-                            
                             botonCambiarRol
-                                .padding(.top, 16)
-                                .padding(.bottom, 40)
+                                .padding(.top, 20)
+                                .padding(.bottom, 30)
                         }
                     }
-                } else {
-                    Spacer()
-                    VStack(spacing: 16) {
-                        ProgressView()
-                        Text("Cargando perfil…")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
                 }
+            } else {
+                ProgressView("Cargando perfil…")
             }
         }
+        .navigationBarBackButtonHidden(true)
         .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) { aparecer = true } }
-        .alert("¿Cambiar rol?", isPresented: $mostrarConfirmacion) {
+        .alert("¿Cambiar rol?", isPresented: $mostrarConfirmacionRol) {
             Button("Cancelar", role: .cancel) {}
             Button("Cambiar", role: .destructive) { userRole = "" }
         } message: {
             Text("Volverás a la pantalla de selección de rol.")
         }
         .onChange(of: pickerItem) { _, newItem in
-            Task { await cargarFoto(newItem) }
+            Task { await cargarFotoPerfil(newItem) }
         }
     }
 
-    // MARK: - Header
+    // MARK: - Barra superior
+
+    private var barraSuperior: some View {
+        HStack {
+            Button(action: {
+                let impact = UIImpactFeedbackGenerator(style: .light)
+                impact.impactOccurred()
+                dismiss()
+            }) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Color(.secondarySystemGroupedBackground), in: Circle())
+            }
+            .buttonStyle(ScaleButtonStyle())
+            
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Header compacto
 
     @ViewBuilder
     private func headerCompacto(_ perfil: BuyerProfile) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             PhotosPicker(selection: $pickerItem, matching: .images) {
                 ZStack(alignment: .bottomTrailing) {
-                    avatarView(perfil)
-                        .frame(width: 100, height: 100)
-                    
-                    // Icono de cámara
+                    avatarView(perfil).frame(width: 96, height: 96)
                     ZStack {
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 32, height: 32)
-                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                        Circle().fill(Color.appBlue).frame(width: 28, height: 28)
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.appBlue)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
                     }
-                    .offset(x: 4, y: 4)
+                    .overlay(Circle().strokeBorder(Color(.systemGroupedBackground), lineWidth: 3))
+                    .offset(x: 2, y: 2)
                 }
+                .scaleEffect(presionandoAvatar ? 0.96 : 1)
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        withAnimation(.easeInOut(duration: 0.15)) { presionandoAvatar = true }
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { presionandoAvatar = false }
+                    }
+            )
 
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Text(perfil.nombre)
-                    .font(.title2.weight(.bold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
 
                 Text(perfil.telefono)
@@ -116,7 +130,8 @@ struct PerfilCompradorView: View {
                     .monospacedDigit()
             }
         }
-        .padding(.top, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity)
         .opacity(aparecer ? 1 : 0)
         .offset(y: aparecer ? 0 : -10)
@@ -126,53 +141,62 @@ struct PerfilCompradorView: View {
     private func avatarView(_ perfil: BuyerProfile) -> some View {
         Group {
             if let data = perfil.fotoPerfilData, let img = UIImage(data: data) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFill()
+                Image(uiImage: img).resizable().scaledToFill()
             } else {
                 ZStack {
-                    Circle().fill(Color.appBlue.opacity(0.15))
-                    Text("🏭").font(.system(size: 48))
+                    Circle().fill(LinearGradient(
+                        colors: [Color(red: 0.35, green: 0.6, blue: 0.95),
+                                 Color(red: 0.2, green: 0.45, blue: 0.85)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Text("🏭").font(.system(size: 44))
                 }
             }
         }
         .clipShape(Circle())
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
+        .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
     }
 
-    // MARK: - Stats
+    // MARK: - Stats row
 
     private var statsRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             statCard(valor: "\(matches.count)", label: "Matches", color: .appBlue)
             statCard(
                 valor: "\(matches.filter { $0.estado == .confirmado }.count)",
-                label: "Confirmados", color: .appGreen
+                label: "Confirmados",
+                color: .appGreen
             )
             statCard(
                 valor: "\(matches.filter { $0.estado == .propuesto }.count)",
-                label: "Pendientes", color: .orange
+                label: "Pendientes",
+                color: .orange
             )
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
+        .opacity(aparecer ? 1 : 0)
+        .offset(y: aparecer ? 0 : 8)
     }
 
     @ViewBuilder
     private func statCard(valor: String, label: String, color: Color) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             Text(valor)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(color)
                 .monospacedDigit()
+                .contentTransition(.numericText())
             Text(label)
-                .font(.caption.weight(.medium))
+                .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
+                .tracking(0.5)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(Color(.systemGray6)) // Gris muy claro para destacar del fondo blanco
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.vertical, 14)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
     }
 
     // MARK: - Mini mapa
@@ -185,48 +209,56 @@ struct PerfilCompradorView: View {
             span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
         )
 
-        VStack(alignment: .leading, spacing: 8) {
-            Text("UBICACIÓN DE PLANTA")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 36)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Ubicación de planta")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 22)
+            .padding(.bottom, 8)
 
             ZStack(alignment: .bottomLeading) {
                 Map(coordinateRegion: .constant(region),
                     annotationItems: [BuyerMapPinSimple(coordinate: coord)]) { pin in
                     MapMarker(coordinate: pin.coordinate, tint: .appBlue)
                 }
-                .frame(height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .frame(height: 150)
                 .allowsHitTesting(false)
 
                 HStack(spacing: 6) {
                     Image(systemName: "mappin.and.ellipse")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.appBlue)
                     Text(perfil.direccion)
-                        .font(.footnote.weight(.medium))
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.white.opacity(0.9))
-                .clipShape(Capsule())
-                .padding(12)
+                .padding(.vertical, 7)
+                .background(.regularMaterial, in: Capsule())
+                .padding(10)
             }
-            .padding(.horizontal, 20)
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 16)
         }
     }
 
-    // MARK: - Lista de matches
+    // MARK: - Matches list
 
     private var matchesList: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("ACTIVIDAD RECIENTE")
-                    .font(.footnote.weight(.medium))
+                Text("Actividad reciente")
+                    .font(.footnote.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
                 Spacer()
                 if !matches.isEmpty {
                     Text("\(matches.count)")
@@ -234,55 +266,62 @@ struct PerfilCompradorView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 20)
+            .padding(.top, 22)
+            .padding(.bottom, 8)
 
             if matches.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(matches.enumerated()), id: \.element.id) { idx, match in
                         matchRow(match)
                         if idx < matches.count - 1 {
-                            Divider().padding(.leading, 52)
+                            Divider().padding(.leading, 60)
                         }
                     }
                 }
-                .background(Color(.systemGray6))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(.horizontal, 20)
+                .background(
+                    Color(.secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .padding(.horizontal, 16)
             }
         }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Image(systemName: "tray")
-                .font(.system(size: 40, weight: .light))
+                .font(.system(size: 38, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("Sin actividad")
-                .font(.headline)
-            Text("Tus matches aparecerán aquí cuando conectes con un productor.")
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
+            Text("Tus matches aparecerán aquí cuando conectes con un productor")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
-        .padding(.horizontal, 32)
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
     private func matchRow(_ match: Match) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             ZStack {
-                Circle()
-                    .fill(colorEstado(match.estado).opacity(0.15))
-                    .frame(width: 32, height: 32)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(colorEstado(match.estado).opacity(0.12))
+                    .frame(width: 44, height: 44)
                 Image(systemName: iconoEstado(match.estado))
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(colorEstado(match.estado))
             }
 
@@ -290,26 +329,30 @@ struct PerfilCompradorView: View {
                 Text("Match registrado")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                Text(match.estado.rawValue.capitalized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(match.estado.rawValue.capitalized)
+                    Text("·")
+                    Text(match.fecha, format: .dateTime.day().month(.abbreviated))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Spacer()
 
             Text(match.fecha, format: .relative(presentation: .numeric))
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     private func iconoEstado(_ estado: MatchEstado) -> String {
         switch estado {
         case .propuesto:  return "clock.fill"
-        case .confirmado: return "checkmark"
-        case .rechazado:  return "xmark"
+        case .confirmado: return "checkmark.circle.fill"
+        case .rechazado:  return "xmark.circle.fill"
         }
     }
 
@@ -325,27 +368,50 @@ struct PerfilCompradorView: View {
 
     private var botonCambiarRol: some View {
         Button(role: .destructive) {
-            mostrarConfirmacion = true
+            let impact = UIImpactFeedbackGenerator(style: .medium)
+            impact.impactOccurred()
+            mostrarConfirmacionRol = true
         } label: {
-            Text("Cambiar a Productor")
-                .font(.body.weight(.medium))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Cambiar rol")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(.appRed)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
         }
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(.horizontal, 20)
+        .buttonStyle(ScaleButtonStyle())
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Foto
 
-    private func cargarFoto(_ item: PhotosPickerItem?) async {
+    private func cargarFotoPerfil(_ item: PhotosPickerItem?) async {
         guard let item, let perfil else { return }
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
         if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.8) {
-            perfil.fotoPerfilData = jpg
-            try? modelContext.save()
+            await MainActor.run {
+                perfil.fotoPerfilData = jpg
+                try? modelContext.save()
+            }
         }
+    }
+}
+
+// MARK: - Estilo de botón con animación de escala (HIG-friendly)
+
+private struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 

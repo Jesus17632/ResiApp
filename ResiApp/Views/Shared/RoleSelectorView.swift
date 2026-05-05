@@ -1,22 +1,18 @@
 //
 //  RolSelectorView.swift
-//  EcoVinculo
-//
-//  Pantalla de bienvenida del primer lanzamiento. El usuario debe elegir
-//  un rol antes de continuar; no hay forma de cerrarla sin elegir.
+//  ResiApp
 //
 
 import SwiftUI
 
 struct RolSelectorView: View {
     @AppStorage("userRole") private var userRole: String = ""
-    
-    // Nueva variable para controlar la vista emergente
+
     @State private var mostrarOnboardingProductor = false
+    @State private var mostrarOnboardingComprador = false  // ← NUEVO
 
     var body: some View {
         VStack(spacing: 32) {
-            // Encabezado / branding
             VStack(spacing: 12) {
                 Image(systemName: "leaf.circle.fill")
                     .resizable()
@@ -35,14 +31,12 @@ struct RolSelectorView: View {
 
             Spacer()
 
-            // Dos botones grandes con ícono y descripción
             VStack(spacing: 20) {
                 rolButton(
                     icono: "leaf.fill",
                     titulo: "Soy Productor",
                     descripcion: "Tengo estiércol que quiero aprovechar"
                 ) {
-                    // Abrimos la pantalla emergente en lugar de asignar el rol de golpe
                     mostrarOnboardingProductor = true
                 }
 
@@ -51,7 +45,7 @@ struct RolSelectorView: View {
                     titulo: "Soy Comprador",
                     descripcion: "Proceso material para biogás o compostaje"
                 ) {
-                    userRole = "comprador"
+                    mostrarOnboardingComprador = true  // ← CAMBIADO: ya no asigna el rol directo
                 }
             }
             .padding(.horizontal, 24)
@@ -59,23 +53,32 @@ struct RolSelectorView: View {
             Spacer()
         }
         .background(Color(.systemBackground).ignoresSafeArea())
-        // Aquí conectamos el Onboarding del Productor como una vista independiente
+        // Onboarding Productor
         .fullScreenCover(isPresented: $mostrarOnboardingProductor) {
             ProducerOnboardingView(
                 onComplete: {
-                    // Al terminar, asignamos el rol y cerramos el modal
                     userRole = "productor"
                     mostrarOnboardingProductor = false
                 },
                 onBack: {
-                    // Si le da a la flechita de regreso, solo cerramos el modal
                     mostrarOnboardingProductor = false
+                }
+            )
+        }
+        // Onboarding Comprador — idéntico patrón  ← NUEVO
+        .fullScreenCover(isPresented: $mostrarOnboardingComprador) {
+            BuyerOnboardingView(
+                onComplete: {
+                    userRole = "comprador"
+                    mostrarOnboardingComprador = false
+                },
+                onBack: {
+                    mostrarOnboardingComprador = false  // regresa al selector de rol
                 }
             )
         }
     }
 
-    /// Card-button reutilizable para cada rol.
     @ViewBuilder
     private func rolButton(
         icono: String,

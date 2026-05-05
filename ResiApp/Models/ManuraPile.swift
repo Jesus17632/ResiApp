@@ -1,18 +1,18 @@
 //
 //  ManurePile.swift
-//  EcoVinculo
+//  ResiApp
 //
 //  Modelo principal: una pila de estiércol fotografiada por el productor.
+//  La fuente animal es siempre bovina por construcción de la app.
 //
 
 import Foundation
 import SwiftData
 
 /// Estado del registro respecto al pipeline de análisis y matching.
-/// Se almacena como String (rawValue) en SwiftData; se expone como enum vía propiedad calculada.
 enum SyncStatus: String, Codable {
-    case pendingAnalysis  // Subida pero aún no analizada (offline o esperando IA)
-    case available        // Analizada por Gemini, lista para aparecer en marketplace
+    case pendingAnalysis  // Subida pero aún no analizada
+    case available        // Analizada por IA, lista para aparecer en marketplace
     case matched          // Ya tiene un Match confirmado con una planta
 }
 
@@ -23,18 +23,16 @@ final class ManurePile {
     var volumenM3: Double
     var humedadPct: Double
 
-    // Ubicación: lat/lon como Double porque CLLocationCoordinate2D no es Codable.
-    // En Bloque 2/3 se llenan con CoreLocation.
+    // Ubicación
     var latitud: Double
     var longitud: Double
 
-    // Solo el nombre del archivo dentro de Documents/, no la ruta absoluta.
-    // Esto sobrevive reinstalaciones del simulador y cambios de container ID.
     var fotoFileName: String?
-
     var audioTranscripcion: String?
 
-    // SwiftData persiste el rawValue. La propiedad calculada `syncStatus` da la API tipo enum.
+    /// Especie de origen. Constante por diseño: la app es exclusivamente bovina.
+    var animalFuente: String = "Bovino 🐄"
+
     var syncStatusRaw: String
 
     var syncStatus: SyncStatus {
@@ -62,5 +60,6 @@ final class ManurePile {
         self.fotoFileName = fotoFileName
         self.audioTranscripcion = audioTranscripcion
         self.syncStatusRaw = syncStatus.rawValue
+        // animalFuente queda con su valor por defecto "Bovino 🐄"
     }
 }

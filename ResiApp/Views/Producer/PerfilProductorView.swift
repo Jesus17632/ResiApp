@@ -19,6 +19,7 @@ struct PerfilProductorView: View {
     @State private var mostrarConfirmacionRol = false
     @State private var simulandoCaptura = false
     @State private var mostrarExito = false
+    @State private var mostrarReporte = false          // ← NUEVO
     @State private var pickerItem: PhotosPickerItem?
     @State private var aparecer = false
 
@@ -32,7 +33,7 @@ struct PerfilProductorView: View {
                 VStack(spacing: 0) {
                     headerCompacto(perfil)
                     statsRow(perfil)
-                    accionesRow
+                    accionesRow                        // ← ahora incluye botón de reporte
                     publicacionesList(perfil)
                     Spacer(minLength: 0)
                     botonCambiarRol
@@ -41,7 +42,7 @@ struct PerfilProductorView: View {
                 ProgressView("Cargando perfil…")
             }
 
-            // Toast éxito
+            // Toast éxito captura
             if mostrarExito {
                 VStack {
                     Spacer()
@@ -68,6 +69,12 @@ struct PerfilProductorView: View {
         }
         .onChange(of: pickerItem) { _, newItem in
             Task { await cargarFotoPerfil(newItem) }
+        }
+        // ← NUEVO: sheet de reportes
+        .sheet(isPresented: $mostrarReporte) {
+            if let perfil {
+                ReporteProductorView(perfil: perfil)
+            }
         }
     }
 
@@ -128,7 +135,7 @@ struct PerfilProductorView: View {
         .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
     }
 
-    // MARK: - Stats row (estilo iOS Settings)
+    // MARK: - Stats row
 
     @ViewBuilder
     private func statsRow(_ perfil: ProducerProfile) -> some View {
@@ -156,34 +163,51 @@ struct PerfilProductorView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: - Acciones
+    // MARK: - Acciones ← MODIFICADO: ahora son dos botones en HStack
 
     private var accionesRow: some View {
-        Button(action: simularCaptura) {
-            HStack(spacing: 10) {
-                if simulandoCaptura {
-                    ProgressView().tint(.white)
-                } else {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 16, weight: .semibold))
+        HStack(spacing: 10) {
+            // Botón principal: simular captura
+            Button(action: simularCaptura) {
+                HStack(spacing: 8) {
+                    if simulandoCaptura {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    Text(simulandoCaptura ? "Procesando…" : "Simular captura")
+                        .font(.subheadline.weight(.semibold))
                 }
-                Text(simulandoCaptura ? "Procesando…" : "Simular captura")
-                    .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(Color.appGreen,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .foregroundStyle(.white)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .background(Color.appGreen, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .foregroundStyle(.white)
+            .disabled(simulandoCaptura)
+
+            // Botón secundario: generar reporte PDF
+            Button(action: { mostrarReporte = true }) {
+                Image(systemName: "doc.richtext.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(width: 48, height: 48)
+                    .background(
+                        Color.appGreen.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
+                    .foregroundStyle(.appGreen)
+            }
         }
-        .disabled(simulandoCaptura)
         .padding(.horizontal, 16)
         .padding(.top, 12)
     }
 
-    // MARK: - Publicaciones (con scroll interno)
+    // MARK: - Publicaciones
 
     @ViewBuilder
     private func publicacionesList(_ perfil: ProducerProfile) -> some View {
@@ -340,7 +364,8 @@ struct PerfilProductorView: View {
         guard let item, let perfil else { return }
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
         if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.8) {
-            perfil.fotoPerfilData = jpg; try? modelContext.save()
+            perfil.fotoPerfilData = jpg
+            try? modelContext.save()
         }
     }
 
