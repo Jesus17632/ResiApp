@@ -2,365 +2,363 @@
 //  CapturaView.swift
 //  ResiApp
 //
-//  Pestaña del productor: tomar/seleccionar foto, analizarla con
-//  Apple Intelligence (Vision + Foundation Models), y publicarla
-//  al marketplace si el material es apto.
+//  Pestaña del productor — versión "smart capture" estilo Google Lens:
+//
+//  - Visor en vivo (AVCaptureSession) que detecta la pila automáticamente.
+//  - Overlay 3D animado encima del objeto detectado.
+//  - Lock-on automático cuando la detección es estable → análisis de IA.
+//  - Rama paralela "Elegir de galería" que salta directo al análisis.
+//  - Pantalla final con diagnóstico y botón de publicar al marketplace.
 //
 
 import SwiftUI
 import SwiftData
-import PhotosUI
+import AVFoundation
+import CoreLocation
 internal import MapKit
 
 struct CapturaView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(LocationManager.self) private var locationManager
 
-    // Servicio de clasificación. Si quieres swap (Gemini, CoreML, etc.)
-    // basta cambiar esta línea — todo el resto usa el protocolo.
-    private let classifier: any ManureClassifierService = AppleIntelligenceClassifier()
-
-    // Estado de la foto y del análisis
-    @State private var selectedItem: PhotosPickerItem?
-    @State private var imageData: Data?
-    @State private var savedFileName: String?
-
-    // Estado para presentar la cámara
-    @State private var isShowingCamera = false
-
-    @State private var isProcesando = false
-    @State private var resultado: ManureClassification?
-    @State private var pileEnAnalisis: ManurePile?
-
-    // Manejo de errores y avisos
-    @State private var modelUnavailableMessage: String?
-    @State private var errorMessage: String?
-    @State private var showError = false
-    @State private var showNotApto = false
+    @State private var viewModel: CapturaViewModel?
+    @State private var isShowingGallery = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // 1. Preview de foto o placeholder
-                    if let imageData, let uiImage = UIImage(data: imageData) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 280)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .padding(.horizontal)
-                    } else {
-                        placeholder
-                    }
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                    // 2. Banners
-                    if locationManager.authorizationStatus == .denied ||
-                       locationManager.authorizationStatus == .restricted {
-                        bannerSinUbicacion
-                    }
-                    if let modelUnavailableMessage {
-                        bannerModeloNoDisponible(mensaje: modelUnavailableMessage)
-                    }
-
-                    // 3. Si ya hay resultado, mostrar card de resultados.
-                    //    Si no, mostrar los botones de acción.
-                    if let resultado {
-                        ResultadoCard(
-                            resultado: resultado,
-                            onPublicar: { publicarEnMarketplace(resultado) },
-                            onReintentar: { reset() }
-                        )
-                        .padding(.horizontal)
-                    } else {
-                        botonesAccion
-                    }
-
-                    Spacer(minLength: 40)
-                }
-                .padding(.top)
+            if let viewModel {
+                content(vm: viewModel)
+            } else {
+                ProgressView().tint(.white)
             }
-            .navigationTitle("Captura")
-            .onChange(of: selectedItem) { _, newValue in
-                Task { await cargarImagenDesdePicker(newValue) }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .task {
+            if viewModel == nil {
+                viewModel = CapturaViewModel(
+                    context: modelContext,
+                    classifier: AppleIntelligenceClassifier(),
+                    locationProvider: { [locationManager] in
+                        locationManager.region.center
+                    }
+                )
             }
-            .sheet(isPresented: $isShowingCamera) {
-                CameraPicker { uiImage in
-                    handleCameraImage(uiImage)
-                }
+            if let vm = viewModel, case .requestingPermission = vm.state {
+                await vm.requestCameraPermission()
+            }
+        }
+        .onDisappear {
+            viewModel?.stopCamera()
+        }
+        .sheet(isPresented: $isShowingGallery) {
+            GalleryPicker { image in
+                viewModel?.analyzeFromGallery(uiImage: image)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    // MARK: - Content por estado
+
+    @ViewBuilder
+    private func content(vm: CapturaViewModel) -> some View {
+        switch vm.state {
+
+        case .requestingPermission:
+            permissionLoader
+
+        case .denied:
+            CameraPermissionDeniedView {
+                isShowingGallery = true
+            }
+
+        case .scanning(let detection):
+            scanningContent(vm: vm, detection: detection)
+
+        case .locking(_, let confidence):
+            lockingContent(vm: vm, confidence: confidence)
+
+        case .analyzing(let frame):
+            analyzingContent(frame: frame)
+
+        case .result(let classification, let frame):
+            ResultadoScreen(
+                resultado: classification,
+                frame: frame,
+                onPublicar: { vm.publicarEnMarketplace() },
+                onReintentar: { vm.resetToScanning() }
+            )
+
+        case .error(let message, let frame):
+            errorContent(message: message, frame: frame, vm: vm)
+        }
+    }
+
+    // MARK: - Estado: scanning (cámara en vivo + recuadro estático)
+
+    @ViewBuilder
+    private func scanningContent(vm: CapturaViewModel, detection: DetectionResult) -> some View {
+        ZStack {
+            CameraPreviewView(session: vm.cameraSession)
                 .ignoresSafeArea()
-            }
-            .alert("Material no procesable", isPresented: $showNotApto) {
-                Button("Tomar otra foto") { reset() }
-            } message: {
-                Text(resultado?.razon ?? "El material detectado no es apto para procesamiento.")
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(errorMessage ?? "Algo salió mal.")
+
+            // Recuadro estático estilo Tlane, centrado.
+            SmartBoundingBoxOverlay(isLocked: false)
+
+            VStack {
+                topHint(detection: detection)
+                Spacer()
+                bottomBar
             }
         }
     }
 
-    // MARK: - Subvistas
-
-    private var placeholder: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            Text("Toma una foto de la pila de estiércol")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+    private func topHint(detection: DetectionResult) -> some View {
+        let text: String
+        if detection.isLikelyManure && detection.confidence >= 0.45 {
+            text = "Mantén estable…"
+        } else {
+            text = "Centra la pila en el recuadro"
         }
-        .frame(maxWidth: .infinity, minHeight: 220)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .padding(.horizontal)
+        return Text(text)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.top, 60)
     }
 
-    private var bannerSinUbicacion: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "location.slash.fill")
-                .foregroundStyle(.orange)
-            Text("Sin permiso de ubicación. La pila se guardará sin coordenadas exactas.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var bottomBar: some View {
+        HStack(spacing: 14) {
+            // Galería (rama secundaria)
+            Button {
+                isShowingGallery = true
+            } label: {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.title3)
+                    .frame(width: 52, height: 52)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .foregroundStyle(.white)
+            }
+
             Spacer()
+
+            // Atajo manual: si el detector no está disparando, el usuario
+            // puede forzar un análisis con el frame actual. La detección
+            // automática es lo principal, pero no atrapamos al usuario.
+            Button {
+                viewModel?.captureManually()
+            } label: {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 72, height: 72)
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 4).padding(-6))
+            }
+
+            Spacer()
+
+            // Placeholder para mantener simétrico el shutter
+            Color.clear.frame(width: 52, height: 52)
         }
-        .padding(12)
-        .background(Color.orange.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 36)
     }
 
-    private func bannerModeloNoDisponible(mensaje: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "brain.head.profile")
-                .foregroundStyle(.purple)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Apple Intelligence")
-                    .font(.caption.bold())
-                Text(mensaje)
+    // MARK: - Estado: locking (recuadro sólido ~450ms)
+
+    private func lockingContent(vm: CapturaViewModel, confidence: Double) -> some View {
+        ZStack {
+            CameraPreviewView(session: vm.cameraSession)
+                .ignoresSafeArea()
+
+            SmartBoundingBoxOverlay(isLocked: true)
+
+            VStack {
+                Text("Pila identificada")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 60)
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Estado: analyzing (frame congelado + spinner)
+
+    private func analyzingContent(frame: UIImage) -> some View {
+        ZStack {
+            Image(uiImage: frame)
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+
+            // Capa oscura encima
+            Color.black.opacity(0.55).ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+                Text("Analizando con IA…")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("Estimando humedad, volumen y calidad")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.8))
             }
-            Spacer()
+            .padding(28)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
         }
-        .padding(12)
-        .background(Color.purple.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal)
     }
 
-    private var botonesAccion: some View {
-        VStack(spacing: 12) {
-            // Botón principal: tomar foto con la cámara
-            Button {
-                isShowingCamera = true
-            } label: {
-                Label(
-                    imageData == nil ? "Tomar foto" : "Tomar otra foto",
-                    systemImage: "camera.fill"
-                )
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.tlaneGreen)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+    // MARK: - Estado: error
+
+    private func errorContent(message: String, frame: UIImage?, vm: CapturaViewModel) -> some View {
+        ZStack {
+            if let frame {
+                Image(uiImage: frame)
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+                Color.black.opacity(0.6).ignoresSafeArea()
+            } else {
+                Color.black.ignoresSafeArea()
             }
 
-            // Botón secundario: seleccionar de la galería
-            PhotosPicker(
-                selection: $selectedItem,
-                matching: .images,
-                photoLibrary: .shared()
-            ) {
-                Label(
-                    "Elegir de galería",
-                    systemImage: "photo.on.rectangle.angled"
-                )
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color(.secondarySystemBackground))
-                .foregroundStyle(.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.orange)
+                Text("No se pudo analizar")
+                    .font(.title3.bold())
+                    .foregroundStyle(.white)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
 
-            // Analizar con Apple Intelligence
-            Button {
-                Task { await analizarConIA() }
-            } label: {
-                HStack(spacing: 8) {
-                    if isProcesando {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "sparkles")
-                    }
-                    Text(isProcesando ? "Analizando con IA…" : "Analizar con IA")
-                        .bold()
+                Button {
+                    vm.resetToScanning()
+                } label: {
+                    Label("Intentar de nuevo", systemImage: "arrow.counterclockwise")
+                        .font(.headline)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .background(Color.tlaneGreen)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
                 }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(imageData == nil ? Color.gray.opacity(0.4) : Color.blue)
+                .padding(.top, 8)
+            }
+            .padding(28)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .padding(.horizontal, 32)
+        }
+    }
+
+    // MARK: - Estado: solicitando permiso
+
+    private var permissionLoader: some View {
+        VStack(spacing: 12) {
+            ProgressView().tint(.white)
+            Text("Solicitando acceso a la cámara…")
                 .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .disabled(imageData == nil || isProcesando)
+                .font(.subheadline)
         }
-        .padding(.horizontal)
-    }
-
-    // MARK: - Lógica: cargar foto desde el picker (galería)
-
-    private func cargarImagenDesdePicker(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
-        guard let data = try? await item.loadTransferable(type: Data.self) else {
-            print("❌ No se pudo cargar la imagen del picker")
-            return
-        }
-        await MainActor.run {
-            persistirImagen(data: data)
-        }
-    }
-
-    // MARK: - Lógica: cargar foto desde la cámara
-
-    private func handleCameraImage(_ uiImage: UIImage) {
-        // Convertimos a JPEG con compresión razonable. Mismo formato que el picker.
-        guard let data = uiImage.jpegData(compressionQuality: 0.85) else {
-            print("❌ No se pudo convertir la imagen de la cámara a JPEG")
-            errorMessage = "No se pudo procesar la foto tomada."
-            showError = true
-            return
-        }
-        persistirImagen(data: data)
-    }
-
-    /// Guarda los bytes de la foto en Documents/ y actualiza el estado de la vista.
-    /// Se usa tanto desde la cámara como desde la galería.
-    private func persistirImagen(data: Data) {
-        imageData = data
-        resultado = nil   // si había resultado anterior, lo limpiamos
-
-        let fileName = "pile_\(UUID().uuidString).jpg"
-        guard let url = documentsURL()?.appendingPathComponent(fileName) else {
-            savedFileName = nil
-            return
-        }
-
-        do {
-            try data.write(to: url)
-            savedFileName = fileName
-            print("📸 Foto guardada en Documents/: \(fileName)")
-        } catch {
-            print("❌ Error guardando foto: \(error)")
-            savedFileName = nil
-        }
-    }
-
-    // MARK: - Lógica: analizar con IA
-
-    private func analizarConIA() async {
-        guard let imageData, let savedFileName else { return }
-
-        isProcesando = true
-        modelUnavailableMessage = nil
-
-        let coord = locationManager.region.center
-
-        // 1. Crear pile preliminar con .pendingAnalysis
-        let pile = ManurePile(
-            fecha: .now,
-            volumenM3: 0,
-            humedadPct: 0,
-            latitud: coord.latitude,
-            longitud: coord.longitude,
-            fotoFileName: savedFileName,
-            audioTranscripcion: nil,
-            syncStatus: .pendingAnalysis
-        )
-        modelContext.insert(pile)
-        do {
-            try modelContext.save()
-        } catch {
-            errorMessage = "No se pudo guardar la pila: \(error.localizedDescription)"
-            showError = true
-            isProcesando = false
-            return
-        }
-        pileEnAnalisis = pile
-
-        // 2. Clasificar
-        do {
-            let classification = try await classifier.classify(imageData: imageData)
-            print("🧠 Clasificación: humedad=\(classification.humedadPct)%, vol=\(classification.volumenEstimadoM3)m³, apto=\(classification.esApto)")
-
-            // 3. Actualizar pile con los valores reales
-            pile.humedadPct = classification.humedadPct
-            pile.volumenM3 = classification.volumenEstimadoM3
-            // Nota: NO marcamos .available aquí. El productor decide
-            // explícitamente publicarla con el botón "Publicar en marketplace".
-            try? modelContext.save()
-
-            resultado = classification
-
-            // Si no es apto, mostramos alert y no permitimos publicar.
-            if !classification.esApto {
-                showNotApto = true
-            }
-
-        } catch let error as ClassifierError {
-            switch error {
-            case .modelUnavailable(let reason):
-                // El pile queda en .pendingAnalysis: se podrá reintentar después.
-                modelUnavailableMessage = reason
-            default:
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
-        }
-
-        isProcesando = false
-    }
-
-    // MARK: - Lógica: publicar al marketplace
-
-    private func publicarEnMarketplace(_ classification: ManureClassification) {
-        guard classification.esApto, let pile = pileEnAnalisis else { return }
-        pile.syncStatus = .available
-        do {
-            try modelContext.save()
-            print("✅ Pila publicada en marketplace. id=\(pile.id)")
-            reset()
-        } catch {
-            errorMessage = "No se pudo publicar: \(error.localizedDescription)"
-            showError = true
-        }
-    }
-
-    // MARK: - Reset / utilidades
-
-    private func reset() {
-        selectedItem = nil
-        imageData = nil
-        savedFileName = nil
-        resultado = nil
-        pileEnAnalisis = nil
-        modelUnavailableMessage = nil
-    }
-
-    private func documentsURL() -> URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        .padding(20)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
-// MARK: - Card de resultado (subvista)
+// MARK: - Pantalla de "permiso denegado"
+
+private struct CameraPermissionDeniedView: View {
+    let onUseGallery: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "camera.fill.badge.ellipsis")
+                .font(.system(size: 54))
+                .foregroundStyle(.white)
+            Text("Necesitamos acceso a la cámara")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+            Text("ResiApp usa la cámara para identificar pilas de estiércol y analizarlas con IA. También puedes elegir una foto de tu galería.")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            VStack(spacing: 10) {
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Label("Abrir Ajustes", systemImage: "gear")
+                        .font(.headline)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.tlaneGreen)
+
+                Button {
+                    onUseGallery()
+                } label: {
+                    Label("Elegir de galería", systemImage: "photo.on.rectangle.angled")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            .padding(.top, 6)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.85))
+    }
+}
+
+// MARK: - Pantalla de resultado
+
+private struct ResultadoScreen: View {
+    let resultado: ManureClassification
+    let frame: UIImage
+    let onPublicar: () -> Void
+    let onReintentar: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                Image(uiImage: frame)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 260)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .padding(.horizontal)
+                    .padding(.top, 24)
+
+                ResultadoCard(
+                    resultado: resultado,
+                    onPublicar: onPublicar,
+                    onReintentar: onReintentar
+                )
+                .padding(.horizontal)
+
+                Spacer(minLength: 32)
+            }
+        }
+        .background(Color(.systemBackground))
+    }
+}
+
+// MARK: - Card de resultado (mismo diseño que la versión anterior)
 
 private struct ResultadoCard: View {
     let resultado: ManureClassification
@@ -369,7 +367,6 @@ private struct ResultadoCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Header
             HStack {
                 Image(systemName: resultado.esApto ? "checkmark.seal.fill" : "xmark.seal.fill")
                     .font(.title)
@@ -386,7 +383,6 @@ private struct ResultadoCard: View {
 
             Divider()
 
-            // Métricas
             HStack(spacing: 24) {
                 metricaView(
                     icono: "drop.fill",
@@ -402,7 +398,6 @@ private struct ResultadoCard: View {
                 )
             }
 
-            // Razón del modelo
             VStack(alignment: .leading, spacing: 4) {
                 Text("Análisis")
                     .font(.caption.bold())
@@ -416,7 +411,6 @@ private struct ResultadoCard: View {
             .background(Color(.tertiarySystemBackground))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // Acciones
             if resultado.esApto {
                 Button(action: onPublicar) {
                     Label("Publicar en marketplace", systemImage: "paperplane.fill")

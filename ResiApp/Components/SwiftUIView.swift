@@ -1,8 +1,10 @@
+//
 //  CameraPicker.swift
 //  ResiApp
 //
-//  Wrapper de UIImagePickerController que abre la cámara nativa.
-//  Si la cámara no está disponible (p. ej. Simulator), cae a la galería.
+//  Wrapper de UIImagePickerController para abrir la galería del usuario.
+//  En esta nueva CapturaView lo usamos SOLO para la rama "elegir de galería"
+//  (la rama "tomar foto" ahora vive en la sesión AVCapture en vivo).
 //
 //  Adaptado del patrón usado en Tlane.
 //
@@ -10,18 +12,14 @@
 import SwiftUI
 import UIKit
 
-/// Picker que prefiere cámara si está disponible, con fallback a galería.
-/// En Simulator siempre cae al fallback de galería.
-struct CameraPicker: UIViewControllerRepresentable {
+struct GalleryPicker: UIViewControllerRepresentable {
     let onImagePicked: (UIImage) -> Void
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
         picker.delegate = context.coordinator
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera)
-            ? .camera
-            : .photoLibrary
+        picker.sourceType = .photoLibrary
         picker.allowsEditing = false
         return picker
     }
@@ -33,9 +31,9 @@ struct CameraPicker: UIViewControllerRepresentable {
     }
 
     final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: CameraPicker
+        let parent: GalleryPicker
 
-        init(parent: CameraPicker) {
+        init(parent: GalleryPicker) {
             self.parent = parent
         }
 
