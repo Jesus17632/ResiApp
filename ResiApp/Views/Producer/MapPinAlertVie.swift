@@ -351,11 +351,48 @@ final class PlantaBiomasaAnnotation: NSObject, MKAnnotation {
     }
 }
 
-// MARK: - Pin 🐄 verde pulsante (capturas de ganado bovino)
+// MARK: - Helper: Pin minimalista estilo Apple
+// Disco sólido pequeño con borde blanco, sombra suave e ícono SF Symbol centrado.
+
+private func makeMinimalPin(size: CGFloat, color: UIColor, symbolName: String, symbolSize: CGFloat) -> UIView {
+    let container = UIView(frame: CGRect(origin: .zero, size: CGSize(width: size, height: size)))
+    container.backgroundColor = .clear
+
+    // Sombra suave
+    container.layer.shadowColor = UIColor.black.cgColor
+    container.layer.shadowOpacity = 0.18
+    container.layer.shadowRadius = 3
+    container.layer.shadowOffset = CGSize(width: 0, height: 1.5)
+
+    // Disco sólido con borde blanco
+    let disc = UIView(frame: container.bounds)
+    disc.backgroundColor = color
+    disc.layer.cornerRadius = size / 2
+    disc.layer.borderWidth = 2
+    disc.layer.borderColor = UIColor.white.cgColor
+    container.addSubview(disc)
+
+    // Ícono SF Symbol
+    let config = UIImage.SymbolConfiguration(pointSize: symbolSize, weight: .semibold)
+    let icon = UIImageView(image: UIImage(systemName: symbolName, withConfiguration: config))
+    icon.tintColor = .white
+    icon.contentMode = .scaleAspectFit
+    icon.frame = CGRect(
+        x: (size - symbolSize) / 2,
+        y: (size - symbolSize) / 2,
+        width: symbolSize,
+        height: symbolSize
+    )
+    disc.addSubview(icon)
+
+    return container
+}
+
+// MARK: - Pin verde (capturas de ganado bovino) — minimalista Apple
 
 final class CapturaAnnotationView: MKAnnotationView {
     static let reuseID = "CapturaAnnotationView"
-    private let size: CGFloat = 44
+    private let size: CGFloat = 28
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -369,42 +406,21 @@ final class CapturaAnnotationView: MKAnnotationView {
         subviews.forEach { $0.removeFromSuperview() }
         layer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
-        // Anillo pulsante verde
-        let pulse = CALayer()
-        pulse.frame = bounds
-        pulse.cornerRadius = size / 2
-        pulse.backgroundColor = UIColor(Color.appGreen).withAlphaComponent(0.22).cgColor
-        layer.insertSublayer(pulse, at: 0)
-        let anim = CABasicAnimation(keyPath: "transform.scale")
-        anim.fromValue = 0.8; anim.toValue = 1.45
-        anim.duration = 1.2; anim.autoreverses = true; anim.repeatCount = .infinity
-        pulse.add(anim, forKey: "pulse")
-
-        // Círculo verde
-        let circle = UIView(frame: CGRect(x: 7, y: 7, width: size - 14, height: size - 14))
-        circle.backgroundColor = UIColor(Color.appGreen)
-        circle.layer.cornerRadius = (size - 14) / 2
-        circle.layer.shadowColor = UIColor(Color.appGreen).cgColor
-        circle.layer.shadowOpacity = 0.45
-        circle.layer.shadowRadius = 4
-        circle.layer.shadowOffset = CGSize(width: 0, height: 2)
-        addSubview(circle)
-
-        // Emoji 🐄
-        let label = UILabel()
-        label.text = "🐄"
-        label.font = .systemFont(ofSize: 16)
-        label.textAlignment = .center
-        label.frame = CGRect(x: 7, y: 7, width: size - 14, height: size - 14)
-        addSubview(label)
+        let pin = makeMinimalPin(
+            size: size,
+            color: UIColor(Color.appGreen),
+            symbolName: "pawprint.fill",
+            symbolSize: 14
+        )
+        addSubview(pin)
     }
 }
 
-// MARK: - Pin azul tienda (BuyerProfile del usuario)
+// MARK: - Pin azul (BuyerProfile) — minimalista Apple
 
 final class BuyerAnnotationView: MKAnnotationView {
     static let reuseID = "BuyerAnnotationView"
-    private let size: CGFloat = 44
+    private let size: CGFloat = 28
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -418,38 +434,22 @@ final class BuyerAnnotationView: MKAnnotationView {
         subviews.forEach { $0.removeFromSuperview() }
         layer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
-        let ring = UIView(frame: bounds)
-        ring.backgroundColor = .white
-        ring.layer.cornerRadius = size / 2
-        ring.layer.shadowColor = UIColor.black.cgColor
-        ring.layer.shadowOpacity = 0.3
-        ring.layer.shadowRadius = 6
-        ring.layer.shadowOffset = CGSize(width: 0, height: 3)
-        addSubview(ring)
-
-        let inset: CGFloat = 4
-        let circle = UIView(frame: CGRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2))
-        circle.backgroundColor = UIColor(Color.appBlue)
-        circle.layer.cornerRadius = (size - inset * 2) / 2
-        addSubview(circle)
-
-        let icon = UIImageView(image: UIImage(systemName: "storefront.fill"))
-        icon.tintColor = .white
-        icon.contentMode = .scaleAspectFit
-        let iconSize: CGFloat = 20
-        icon.frame = CGRect(x: (size - iconSize) / 2, y: (size - iconSize) / 2, width: iconSize, height: iconSize)
-        addSubview(icon)
+        let pin = makeMinimalPin(
+            size: size,
+            color: UIColor(Color.appBlue),
+            symbolName: "storefront.fill",
+            symbolSize: 14
+        )
+        addSubview(pin)
     }
 }
 
-// MARK: - Pin verde musgo 🌿 (Planta tratamiento orgánico)
-// Color: verde musgo oscuro #3A7D44 — distinto del verde brillante de capturas
+// MARK: - Pin verde musgo (Planta tratamiento orgánico) — minimalista Apple
 
 final class PlantaOrganicaAnnotationView: MKAnnotationView {
     static let reuseID = "PlantaOrganicaAnnotationView"
-    private let size: CGFloat = 46
+    private let size: CGFloat = 28
 
-    // Verde musgo documentado para plantas de tratamiento orgánico
     static let colorMusgo = UIColor(red: 0.23, green: 0.49, blue: 0.27, alpha: 1)
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
@@ -464,46 +464,22 @@ final class PlantaOrganicaAnnotationView: MKAnnotationView {
         subviews.forEach { $0.removeFromSuperview() }
         layer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
-        // Hexágono (forma industrial reconocible)
-        let bg = UIView(frame: bounds)
-        bg.backgroundColor = Self.colorMusgo
-        bg.layer.cornerRadius = 10
-        bg.layer.shadowColor = Self.colorMusgo.cgColor
-        bg.layer.shadowOpacity = 0.5
-        bg.layer.shadowRadius = 5
-        bg.layer.shadowOffset = CGSize(width: 0, height: 3)
-        addSubview(bg)
-
-        // Ícono hoja (tratamiento orgánico)
-        let icon = UIImageView(image: UIImage(systemName: "leaf.fill"))
-        icon.tintColor = .white
-        icon.contentMode = .scaleAspectFit
-        let iconSize: CGFloat = 22
-        icon.frame = CGRect(x: (size - iconSize) / 2, y: (size - iconSize) / 2, width: iconSize, height: iconSize)
-        addSubview(icon)
-
-        // Badge "ORG" en esquina
-        let badge = UILabel()
-        badge.text = "ORG"
-        badge.font = .systemFont(ofSize: 6, weight: .black)
-        badge.textColor = Self.colorMusgo
-        badge.backgroundColor = .white
-        badge.textAlignment = .center
-        badge.layer.cornerRadius = 4
-        badge.layer.masksToBounds = true
-        badge.frame = CGRect(x: size - 22, y: 0, width: 22, height: 10)
-        addSubview(badge)
+        let pin = makeMinimalPin(
+            size: size,
+            color: Self.colorMusgo,
+            symbolName: "leaf.fill",
+            symbolSize: 14
+        )
+        addSubview(pin)
     }
 }
 
-// MARK: - Pin naranja 🔥 (Planta de biomasa / biogás)
-// Color: naranja energía #E07B39 — representa calor/energía/combustión
+// MARK: - Pin naranja (Planta biomasa / biogás) — minimalista Apple
 
 final class PlantaBiomasaAnnotationView: MKAnnotationView {
     static let reuseID = "PlantaBiomasaAnnotationView"
-    private let size: CGFloat = 46
+    private let size: CGFloat = 28
 
-    // Naranja energía para plantas de biomasa
     static let colorBiomasa = UIColor(red: 0.88, green: 0.48, blue: 0.22, alpha: 1)
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
@@ -518,34 +494,13 @@ final class PlantaBiomasaAnnotationView: MKAnnotationView {
         subviews.forEach { $0.removeFromSuperview() }
         layer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
-        let bg = UIView(frame: bounds)
-        bg.backgroundColor = Self.colorBiomasa
-        bg.layer.cornerRadius = 10
-        bg.layer.shadowColor = Self.colorBiomasa.cgColor
-        bg.layer.shadowOpacity = 0.5
-        bg.layer.shadowRadius = 5
-        bg.layer.shadowOffset = CGSize(width: 0, height: 3)
-        addSubview(bg)
-
-        // Ícono llama (biomasa / biogás)
-        let icon = UIImageView(image: UIImage(systemName: "flame.fill"))
-        icon.tintColor = .white
-        icon.contentMode = .scaleAspectFit
-        let iconSize: CGFloat = 22
-        icon.frame = CGRect(x: (size - iconSize) / 2, y: (size - iconSize) / 2, width: iconSize, height: iconSize)
-        addSubview(icon)
-
-        // Badge "BIO" en esquina
-        let badge = UILabel()
-        badge.text = "BIO"
-        badge.font = .systemFont(ofSize: 6, weight: .black)
-        badge.textColor = Self.colorBiomasa
-        badge.backgroundColor = .white
-        badge.textAlignment = .center
-        badge.layer.cornerRadius = 4
-        badge.layer.masksToBounds = true
-        badge.frame = CGRect(x: size - 22, y: 0, width: 22, height: 10)
-        addSubview(badge)
+        let pin = makeMinimalPin(
+            size: size,
+            color: Self.colorBiomasa,
+            symbolName: "flame.fill",
+            symbolSize: 14
+        )
+        addSubview(pin)
     }
 }
 
@@ -931,4 +886,3 @@ struct HardcodedData {
         PlantaInfo(id: UUID(), nombre: "Nayarit Costa BioGas",               telefono: "+52 311 200 5020", direccion: "Tepic, NAY",           latitud: 21.5042, longitud: -104.8955, tipo: .biomasa, capacidadTon: 410,  descripcion: "Costa Pacífico norte. Estiércol de ganado cebú cruzado de la sierra nayarita."),
     ]
 }
-
